@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx tsx:*)",
+      "WebFetch(domain:www.googleapis.com)",
+      "Bash(curl -s \"https://www.googleapis.com/youtube/v3/channels?part=snippet&forHandle=EIZ98&key=AIzaSyDibSY3xD8zhBzwEYLlnXZBdJRcVOp6U6g\")",
+      "Bash(curl -s \"https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=EIZ98&key=AIzaSyDibSY3xD8zhBzwEYLlnXZBdJRcVOp6U6g\")",
+      "Bash(curl -s \"https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=UCEvcE_u4PBXMpQ-EcT2-pJA&key=AIzaSyDibSY3xD8zhBzwEYLInXZBdJRcVOp6U6g\")",
+      "Bash(grep -r \"instagram\\\\|tiktok\\\\|youtube\" ./api --include=*.ts --include=*.js)",
+      "Bash(xargs grep:*)",
+      "Bash(curl -s -X POST \"https://hagdfvlkrradeesgpvhh.supabase.co/rest/v1/rpc/exec_sql\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhZ2RmdmxrcnJhZGVlc2dwdmhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNjE1NzYsImV4cCI6MjA4OTkzNzU3Nn0.F7Cwu50N9xEvXItut5f_TTVYIv8EqHbHa9YPSSkrXZI\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhZ2RmdmxrcnJhZGVlc2dwdmhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNjE1NzYsImV4cCI6MjA4OTkzNzU3Nn0.F7Cwu50N9xEvXItut5f_TTVYIv8EqHbHa9YPSSkrXZI\" -H \"Content-Type: application/json\" -d '{\"\"query\"\": \"\"SELECT 1\"\"}')",
+      "Bash(npx vercel:*)",
+      "Bash(vercel whoami:*)",
+      "Bash(vercel project:*)",
+      "Bash(vercel --yes)",
+      "Bash(vercel link:*)",
+      "Bash(VERCEL_ORG_ID=team_waiVrro8NqN1Wk1a4g9Rpvs9 vercel link --yes)",
+      "Bash(vercel --yes --team eizs-projects-5ee2eaca)",
+      "Bash(\"C:/Users/eiz/Documents/git/eiz-metrics/eiz-metrics/.vercel/project.json\":*)"
+    ]
+  }
+}
