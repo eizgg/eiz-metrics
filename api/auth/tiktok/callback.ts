@@ -34,7 +34,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const code = req.query.code as string | undefined
     const error = req.query.error as string | undefined
-    const state = req.query.state as string | undefined
 
     // Si TikTok devolvió error (ej: usuario canceló)
     if (error) {

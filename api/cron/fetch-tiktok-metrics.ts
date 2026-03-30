@@ -9,7 +9,44 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
+
+// --- Schema mínimo de Supabase para este cron ---
+
+interface TikTokMetricsDB {
+  public: {
+    Tables: {
+      tiktok_tokens: {
+        Row: { open_id: string; access_token: string; refresh_token: string; expires_at: string; refresh_expires_at: string; scope: string; updated_at: string }
+        Insert: { open_id: string; access_token: string; refresh_token: string; expires_at: string; refresh_expires_at: string; scope: string; updated_at: string }
+        Update: Partial<{ open_id: string; access_token: string; refresh_token: string; expires_at: string; refresh_expires_at: string; scope: string; updated_at: string }>
+        Relationships: []
+      }
+      follower_counts: {
+        Row: { id: string; platform: string; count: number; recorded_at: string }
+        Insert: { id: string; platform: string; count: number; recorded_at: string }
+        Update: Partial<{ id: string; platform: string; count: number; recorded_at: string }>
+        Relationships: []
+      }
+      videos: {
+        Row: { id: string; platform: string; external_id: string; title: string | null; url: string | null; duration_seconds: number | null; published_at: string | null; created_at: string }
+        Insert: { id: string; platform: string; external_id: string; title?: string | null; url?: string | null; duration_seconds?: number | null; published_at?: string | null }
+        Update: Partial<{ platform: string; external_id: string; title: string | null; url: string | null; duration_seconds: number | null; published_at: string | null }>
+        Relationships: []
+      }
+      video_metrics: {
+        Row: { id: string; video_id: string; views: number; likes: number; comments: number; shares: number; saves: number; fetched_at: string }
+        Insert: { id: string; video_id: string; views?: number; likes?: number; comments?: number; shares?: number; saves?: number }
+        Update: Partial<{ video_id: string; views: number; likes: number; comments: number; shares: number; saves: number }>
+        Relationships: []
+      }
+    }
+    Views: Record<string, never>
+    Functions: Record<string, never>
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
+  }
+}
 
 // --- Tipos para TikTok API v2 ---
 
@@ -78,7 +115,7 @@ async function refreshTokenIfNeeded(
   token: TokenRow,
   clientKey: string,
   clientSecret: string,
-  supabase: ReturnType<typeof createClient>
+  supabase: SupabaseClient<TikTokMetricsDB>
 ): Promise<string> {
   const now = new Date()
   const expiresAt = new Date(token.expires_at)
@@ -155,7 +192,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const clientKey = getEnvOrThrow('TIKTOK_CLIENT_KEY')
     const clientSecret = getEnvOrThrow('TIKTOK_CLIENT_SECRET')
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const supabase = createClient<TikTokMetricsDB>(supabaseUrl, supabaseServiceKey)
 
     // Obtener token guardado
     const { data: tokens, error: tokenErr } = await supabase
