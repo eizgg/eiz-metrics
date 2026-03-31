@@ -6,15 +6,15 @@
   "crons": [
     {
       "path": "/api/cron/fetch-ig-metrics",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/cron/fetch-yt-metrics",
-      "schedule": "0 3,9,15,21 * * *"
+      "schedule": "0 4 * * *"
     },
     {
       "path": "/api/cron/fetch-tiktok-metrics",
-      "schedule": "0 1,7,13,19 * * *"
+      "schedule": "0 5 * * *"
     }
   ]
 }

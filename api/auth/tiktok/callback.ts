@@ -34,7 +34,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const code = req.query.code as string | undefined
     const error = req.query.error as string | undefined
-    const state = req.query.state as string | undefined
 
     // Si TikTok devolvió error (ej: usuario canceló)
     if (error) {
@@ -63,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         client_secret: clientSecret,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://eiz-metrics.vercel.app'}/api/auth/tiktok/callback`,
+        redirect_uri: 'https://eiz-metrics.vercel.app/api/auth/tiktok/callback',
       }),
     })
 
