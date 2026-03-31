@@ -16,7 +16,7 @@ function getEnvOrThrow(name: string): string {
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
   try {
     const clientKey = getEnvOrThrow('TIKTOK_CLIENT_KEY')
-    const redirectUri = `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://eiz-metrics.vercel.app'}/api/auth/tiktok/callback`
+    const redirectUri = 'https://eiz-metrics.vercel.app/api/auth/tiktok/callback'
 
     // Generar state random para CSRF protection
     const state = crypto.randomUUID()

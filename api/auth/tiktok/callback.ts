@@ -62,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         client_secret: clientSecret,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://eiz-metrics.vercel.app'}/api/auth/tiktok/callback`,
+        redirect_uri: 'https://eiz-metrics.vercel.app/api/auth/tiktok/callback',
       }),
     })
 
