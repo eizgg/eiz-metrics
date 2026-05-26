@@ -177,22 +177,18 @@ vercel.json                  # Config de cron jobs + rewrites
 - [x] Métricas: views, likes, comments (shares/saves no disponibles via Data API)
 - [ ] YouTube Analytics API para retención (requiere OAuth, futuro)
 
-### Fase 4: TikTok API v2 (OAuth) 🔄
+### Fase 4: Integración Alternativa TikTok via Userscript ✅
 
-- [x] App "eiz-metrics" en TikTok Developer Portal (ID: 7622686579254134791)
-- [x] Login Kit + scopes: user.info.basic, user.info.stats, video.list
-- [x] Client Key y Secret guardados en `.env`
-- [x] Tabla `tiktok_tokens` creada en Supabase (con RLS, solo service_role)
-- [x] Service Role Key de Supabase guardado en `.env`
-- [x] OAuth flow: `api/auth/tiktok/index.ts` (inicio) + `callback.ts` (intercambio de token)
-- [x] Script `scripts/fetch-tiktok-metrics.ts` — trae videos + seguidores
-- [x] Vercel cron `api/cron/fetch-tiktok-metrics.ts` cada 6hs
-- [x] Páginas `/terms` y `/privacy` (requeridas por TikTok)
-- [x] Token refresh automático cuando está por expirar
-- [ ] Deploy a Vercel y configurar env vars
-- [ ] Verificar URLs en TikTok Developer Portal
-- [ ] App icon (1024x1024) y demo video para review de producción
-- [ ] Autorizar la app (OAuth flow) para obtener primer token
+- [x] Estrategia de intercepción de red adoptada tras rechazo de la API oficial
+- [x] Token de subida `TIKTOK_MANUAL_UPLOAD_TOKEN` agregado en `.env`
+- [x] Endpoint seguro `/api/tiktok/upload` creado en `api/tiktok/upload.ts`
+- [x] Userscript de Tampermonkey creado en `scripts/tiktok-userscript.user.js`
+- [x] Verificación de compilación del backend exitosa (`tsc --noEmit`)
+
+### Fase 4 (Original): TikTok API v2 (OAuth) ❌ (Rechazada por TikTok)
+
+- [x] App en portal, OAuth flow implementado, pero descartado por políticas de la plataforma.
+
 
 ### Futuro
 
