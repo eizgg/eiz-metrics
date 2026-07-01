@@ -23,6 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# Claude local settings (puede contener tokens/secretos locales)
+.claude/settings.local.json
+
 # Environment variables
 .env
 .env.local
