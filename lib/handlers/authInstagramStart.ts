@@ -5,13 +5,13 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { appBaseUrl, getUser, signState, userOwnsAccount } from '../../../lib/server/auth.js'
-import { createServiceClient } from '../../../lib/ingest/sync.js'
-import { GRAPH_API_VERSION } from '../../../lib/ingest/instagram.js'
+import { appBaseUrl, getUser, signState, userOwnsAccount } from '../server/auth.js'
+import { createServiceClient } from '../ingest/sync.js'
+import { GRAPH_API_VERSION } from '../ingest/instagram.js'
 
 const SCOPES = ['instagram_basic', 'instagram_manage_insights', 'pages_read_engagement', 'pages_show_list']
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function authInstagramStart(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
     const appId = process.env.META_APP_ID

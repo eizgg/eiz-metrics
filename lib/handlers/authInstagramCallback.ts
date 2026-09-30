@@ -4,10 +4,10 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { appBaseUrl, verifyState } from '../../../lib/server/auth.js'
-import { createServiceClient } from '../../../lib/ingest/sync.js'
-import { GRAPH_API_VERSION } from '../../../lib/ingest/instagram.js'
-import { exchangeInstagramLongLived } from '../../../lib/ingest/tokens.js'
+import { appBaseUrl, verifyState } from '../server/auth.js'
+import { createServiceClient } from '../ingest/sync.js'
+import { GRAPH_API_VERSION } from '../ingest/instagram.js'
+import { exchangeInstagramLongLived } from '../ingest/tokens.js'
 
 const GRAPH = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 
@@ -15,7 +15,7 @@ interface PagesResponse {
   data: Array<{ id: string; name: string; instagram_business_account?: { id: string; username: string } }>
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function authInstagramCallback(req: VercelRequest, res: VercelResponse) {
   const base = appBaseUrl(req)
   const fail = (reason: string) => res.redirect(302, `${base}/?connect_error=${encodeURIComponent(reason)}`)
 

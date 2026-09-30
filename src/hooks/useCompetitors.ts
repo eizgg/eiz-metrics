@@ -65,3 +65,49 @@ export function useAddCompetitor(accountId: string | null) {
     return null
   }
 }
+
+interface NicheEvidence {
+  themes?: Array<{ theme: string; ownCount: number; competitorCount: number; ownLift: number | null }>
+  opportunities?: Array<{ theme: string; ownLift: number | null }>
+}
+
+// Último análisis de nicho guardado como insight (kind 'nicho')
+export function useNicheAnalysis(accountId: string | null) {
+  const q = useQuery({
+    queryKey: ['niche', accountId],
+    enabled: accountId !== null,
+    queryFn: async (): Promise<NicheEvidence | null> => {
+      const { data, error } = await supabase.from('insights').select('evidence').eq('account_id', accountId as string).eq('kind', 'nicho').order('created_at', { ascending: false }).limit(1)
+      if (error) {
+        if (isMissingRelation(error)) return null
+        throw new Error(error.message)
+      }
+      return ((data ?? [])[0] as { evidence: NicheEvidence } | undefined)?.evidence ?? null
+    },
+  })
+  return { niche: q.data ?? null, loading: accountId !== null && q.isLoading }
+}
+
+export interface ReferenceVideoRow {
+  id: string
+  url: string
+  createdAt: string
+  content: { hook?: { type?: string; text?: string }; format?: string; cta?: { type?: string } } | null
+}
+
+export function useReferenceVideos(accountId: string | null) {
+  const q = useQuery({
+    queryKey: ['references', accountId],
+    enabled: accountId !== null,
+    refetchInterval: (query) => ((query.state.data ?? []).some((r) => r.content === null) ? 15_000 : false),
+    queryFn: async (): Promise<ReferenceVideoRow[]> => {
+      const { data, error } = await supabase.from('reference_videos').select('id, url, content, created_at').eq('account_id', accountId as string).order('created_at', { ascending: false }).limit(10)
+      if (error) {
+        if (isMissingRelation(error)) return []
+        throw new Error(error.message)
+      }
+      return ((data ?? []) as Array<{ id: string; url: string; created_at: string; content: ReferenceVideoRow['content'] }>).map((r) => ({ id: r.id, url: r.url, createdAt: r.created_at, content: r.content }))
+    },
+  })
+  return { references: q.data ?? [] }
+}

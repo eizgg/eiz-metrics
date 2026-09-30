@@ -19,12 +19,8 @@
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/cron/analyze",
+      "path": "/api/cron/daily",
       "schedule": "30 4 * * *"
-    },
-    {
-      "path": "/api/cron/refresh-tokens",
-      "schedule": "0 6 * * 1"
     }
   ]
 }

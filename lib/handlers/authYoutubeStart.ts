@@ -5,15 +5,15 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { appBaseUrl, getUser, signState, userOwnsAccount } from '../../../lib/server/auth.js'
-import { createServiceClient } from '../../../lib/ingest/sync.js'
+import { appBaseUrl, getUser, signState, userOwnsAccount } from '../server/auth.js'
+import { createServiceClient } from '../ingest/sync.js'
 
 export const YOUTUBE_SCOPES = [
   'https://www.googleapis.com/auth/youtube.readonly',
   'https://www.googleapis.com/auth/yt-analytics.readonly',
 ]
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function authYoutubeStart(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
     const clientId = process.env.GOOGLE_CLIENT_ID

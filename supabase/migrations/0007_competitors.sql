@@ -47,3 +47,9 @@ create policy competitor_snapshots_select_own on public.competitor_snapshots for
 drop policy if exists reference_videos_own on public.reference_videos;
 create policy reference_videos_own on public.reference_videos for all
   using (public.owns_account(account_id)) with check (public.owns_account(account_id));
+
+-- El job de análisis puede apuntar a un video de referencia (0006 creó la columna sin FK)
+alter table public.analysis_jobs drop constraint if exists analysis_jobs_reference_video_id_fkey;
+alter table public.analysis_jobs
+  add constraint analysis_jobs_reference_video_id_fkey
+  foreign key (reference_video_id) references public.reference_videos(id) on delete cascade;

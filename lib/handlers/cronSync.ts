@@ -8,17 +8,15 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createServiceClient, resolveAccounts, syncAll } from '../../lib/ingest/sync.js'
-import type { IngestPlatform } from '../../lib/ingest/types.js'
-
-export const config = { maxDuration: 60 }
+import { createServiceClient, resolveAccounts, syncAll } from '../ingest/sync.js'
+import type { IngestPlatform } from '../ingest/types.js'
 
 function parsePlatform(value: string | string[] | undefined): IngestPlatform | undefined {
   const v = Array.isArray(value) ? value[0] : value
   return v === 'instagram' || v === 'youtube' ? v : undefined
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function cronSync(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' })
   }

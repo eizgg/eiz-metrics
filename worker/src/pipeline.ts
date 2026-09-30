@@ -14,6 +14,7 @@ import { run, runOrThrow } from './exec.js'
 export interface AnalysisJob {
   id: string
   video_id: string | null
+  reference_video_id?: string | null
   source_url: string | null
 }
 
@@ -160,6 +161,42 @@ async function loadExamples(supabase: SupabaseClient, video: VideoInfo): Promise
   }))
 }
 
+// --- Análisis común (video propio y de referencia) ---
+
+async function analyzeFile(file: string, dir: string, duration: number, caption: string | null, examples: CorrectedExample[]) {
+  const frames = await extractFrames(file, dir, duration)
+  const [cuts, transcript, ocr] = await Promise.all([detectCuts(file, duration), transcribe(file), ocrFrames(frames, dir)])
+  const result = await analyzeVideo(frames, {
+    durationSeconds: duration,
+    caption,
+    transcript: transcript?.text ?? null,
+    segments: transcript?.segments ?? [],
+    frameTimes: frames.map((f) => f.timeSeconds),
+    examples,
+  })
+  return { result, cuts, transcript, ocr }
+}
+
+// Video de referencia (ajeno): mismo pipeline, pero el resultado va a reference_videos.content, nunca a videos
+async function processReferenceJob(supabase: SupabaseClient, job: AnalysisJob): Promise<JobOutcome> {
+  if (!job.reference_video_id || !job.source_url) throw new Error('Job de referencia sin reference_video_id o URL')
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'eiz-reference-'))
+  try {
+    const file = path.join(dir, 'video.mp4')
+    await runOrThrow('yt-dlp', ['-f', 'mp4/best[height<=720]', '-o', file, '--no-playlist', job.source_url], { timeoutMs: 180_000 })
+    const duration = await probeDuration(file)
+    const { result, cuts, transcript, ocr } = await analyzeFile(file, dir, duration, null, [])
+    const { error } = await supabase
+      .from('reference_videos')
+      .update({ content: { ...result.analysis, duration_seconds: duration, cuts_per_minute: cuts, on_screen_text_ratio: onScreenTextRatio(ocr), transcript: transcript?.text ?? null, analysis_model: result.model } })
+      .eq('id', job.reference_video_id)
+    if (error) throw new Error(`reference_videos: ${error.message}`)
+    return { model: result.model, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, costUsd: result.usage.costUsd }
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+}
+
 // --- Orquestación de un job ---
 
 export interface JobOutcome {
@@ -170,7 +207,8 @@ export interface JobOutcome {
 }
 
 export async function processJob(supabase: SupabaseClient, job: AnalysisJob): Promise<JobOutcome> {
-  if (!job.video_id) throw new Error('Job sin video_id (los videos de referencia se procesan en la Fase F)')
+  if (job.reference_video_id) return processReferenceJob(supabase, job)
+  if (!job.video_id) throw new Error('Job sin video_id ni reference_video_id')
   const { data: videoRow, error } = await supabase
     .from('videos')
     .select('id, platform, url, external_id, platform_account_id, duration_seconds')
@@ -190,17 +228,7 @@ export async function processJob(supabase: SupabaseClient, job: AnalysisJob): Pr
     const duration = await probeDuration(file)
     if (video.duration_seconds === null) await supabase.from('videos').update({ duration_seconds: Math.round(duration) }).eq('id', video.id)
 
-    const frames = await extractFrames(file, dir, duration)
-    const [cuts, transcript, ocr, examples] = await Promise.all([detectCuts(file, duration), transcribe(file), ocrFrames(frames, dir), loadExamples(supabase, video)])
-
-    const result = await analyzeVideo(frames, {
-      durationSeconds: duration,
-      caption: current?.caption ?? null,
-      transcript: transcript?.text ?? null,
-      segments: transcript?.segments ?? [],
-      frameTimes: frames.map((f) => f.timeSeconds),
-      examples,
-    })
+    const { result, cuts, transcript, ocr } = await analyzeFile(file, dir, duration, current?.caption ?? null, await loadExamples(supabase, video))
 
     const update = toContentUpdate(video.id, result.analysis, result.model, {
       cutsPerMinute: cuts,

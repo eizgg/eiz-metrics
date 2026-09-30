@@ -5,14 +5,14 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { z } from 'zod'
-import { getOwnedPlatformAccount, getUser } from '../../lib/server/auth.js'
-import { createServiceClient } from '../../lib/ingest/sync.js'
-import { normalizeTikTok, tiktokVideoSchema } from '../../lib/ingest/tiktok.js'
-import { persistFetchResult } from '../../lib/ingest/persist.js'
+import { getOwnedPlatformAccount, getUser } from '../server/auth.js'
+import { createServiceClient } from '../ingest/sync.js'
+import { normalizeTikTok, tiktokVideoSchema } from '../ingest/tiktok.js'
+import { persistFetchResult } from '../ingest/persist.js'
 
 const bodySchema = z.object({ platformAccountId: z.string().uuid(), video: tiktokVideoSchema, followers: z.number().int().nonnegative().optional() })
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function tiktokManual(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
     const supabase = createServiceClient()

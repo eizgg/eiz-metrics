@@ -4,12 +4,10 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getOwnedPlatformAccount, getUser } from '../../lib/server/auth.js'
-import { createServiceClient, resolveAccountById, syncPlatformAccount } from '../../lib/ingest/sync.js'
+import { getOwnedPlatformAccount, getUser } from '../server/auth.js'
+import { createServiceClient, resolveAccountById, syncPlatformAccount } from '../ingest/sync.js'
 
-export const config = { maxDuration: 60 }
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function actionSyncNow(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
     const supabase = createServiceClient()

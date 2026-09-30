@@ -5,12 +5,10 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { runAllAccounts } from '../../lib/analysis/pipeline.js'
-import { createServiceClient } from '../../lib/ingest/sync.js'
+import { runAllAccounts } from '../analysis/pipeline.js'
+import { createServiceClient } from '../ingest/sync.js'
 
-export const config = { maxDuration: 60 }
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function cronAnalyze(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
   const cronSecret = process.env.CRON_SECRET
   if (cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {

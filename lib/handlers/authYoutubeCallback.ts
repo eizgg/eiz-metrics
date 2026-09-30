@@ -4,8 +4,8 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { appBaseUrl, verifyState } from '../../../lib/server/auth.js'
-import { createServiceClient } from '../../../lib/ingest/sync.js'
+import { appBaseUrl, verifyState } from '../server/auth.js'
+import { createServiceClient } from '../ingest/sync.js'
 
 interface GoogleTokens {
   access_token?: string
@@ -20,7 +20,7 @@ interface ChannelsResponse {
   items?: Array<{ id: string; snippet: { customUrl?: string; title: string }; contentDetails: { relatedPlaylists: { uploads: string } } }>
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function authYoutubeCallback(req: VercelRequest, res: VercelResponse) {
   const base = appBaseUrl(req)
   const fail = (reason: string) => res.redirect(302, `${base}/?connect_error=${encodeURIComponent(reason)}`)
 

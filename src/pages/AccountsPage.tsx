@@ -35,7 +35,7 @@ export function AccountsPage() {
   async function syncNow(pa: PlatformAccount) {
     setBusy(pa.id)
     setMessage(null)
-    const { data, error } = await apiPost<{ insertedMetrics: number; videosFound: number }>('/api/sync/now', { platformAccountId: pa.id })
+    const { data, error } = await apiPost<{ insertedMetrics: number; videosFound: number }>('/api/actions/sync-now', { platformAccountId: pa.id })
     setMessage(error ? `Error: ${error}` : `Sincronizado: ${data?.videosFound ?? 0} videos, ${data?.insertedMetrics ?? 0} métricas nuevas`)
     await client.invalidateQueries()
     setBusy(null)

@@ -60,6 +60,21 @@ create table public.follower_counts (
 );
 ```
 
+### Schema v2 (migraciones en `supabase/migrations/`, aplicar en orden)
+
+| Migración | Agrega |
+|-----------|--------|
+| 0001 | `videos.format` (`short`/`long`/`live`/`post`); `platform` queda en `instagram\|tiktok\|youtube` (adiós `youtube_shorts`); vista `latest_video_metrics` (última métrica por video, `security_invoker`) |
+| 0002 | Multi-cuenta: `profiles`, `accounts`, `platform_accounts`, `platform_credentials` (sin policies: solo service_role), `upload_tokens` (hash sha256), `videos.platform_account_id`, `follower_counts.platform_account_id`, helpers RLS `owns_account` / `owns_platform_account` |
+| 0003 | (después de `scripts/seed-eiz-account.ts`) `platform_account_id NOT NULL`, uniques por cuenta, RLS por dueño en `videos`/`video_metrics`/`follower_counts` (cierra la lectura pública) |
+| 0004 | Fase B: `video_content`, `video_retention_curves`, `audience_snapshots`, `account_daily_metrics`, `video_comments`, `insights`; columnas extendidas en `video_metrics` (`watched_full_pct`, `new_followers`, `traffic_sources`, `profile_visits`) |
+| 0005 | Fase D: `video_scores`, `attribute_lift` |
+| 0006 | Fase E: `analysis_jobs` + `claim_analysis_job()` (cola atómica), bucket de Storage `video-inputs` |
+| 0007 | Fase F: `competitors`, `competitor_snapshots`, `reference_videos` |
+| 0008 | Fase G: `account_profiles` (sembrado con el perfil de EIZ), `content_ideas`, `content_scripts`, `content_calendar` |
+
+Reglas: todo INSERT de ingesta y análisis va con `service_role`; el front solo lee (y edita `video_content`, `insights`, ideas, competidores propios). El código funciona también **antes** de aplicar las migraciones (modo legado: env vars, sin filtro por cuenta, tablas faltantes se ignoran).
+
 ### Por qué video_metrics es serie de tiempo
 
 Cada vez que un cron trae métricas, inserta una fila NUEVA. No pisa la anterior. Así podemos ver curvas de crecimiento por video (500 views el día 1 → 12K el día 7). Para el dashboard, siempre tomamos la métrica más reciente de cada video.
@@ -76,51 +91,44 @@ Tema oscuro con violeta como color identitario del artista.
 - Fuentes: DM Sans (cuerpo) + JetBrains Mono (números), cargadas desde Google Fonts CDN
 - Cards: fondo `rgba(168,85,247,0.04)`, borde `rgba(168,85,247,0.1)`, radius 14px
 
-## Arquitectura de componentes
+## Arquitectura
 
 ```text
 src/
-├── types/index.ts           # Platform, Video, VideoWithMetrics, FollowerDataPoint, SortKey
-├── lib/supabase.ts          # createClient tipado
-├── hooks/
-│   ├── useVideos.ts         # Videos + última métrica, filtra por plataforma
-│   ├── useFollowerCounts.ts # Historial de seguidores agrupado por fecha
-│   └── useVideoHistory.ts  # Serie de tiempo de un video (para drill-down futuro)
-├── components/
-│   ├── StatCard.tsx         # Card individual (views, retención, engagement, seguidores)
-│   ├── PlatformFilter.tsx   # Pills: Todas | Instagram | TikTok | YouTube
-│   ├── VideoList.tsx        # Lista ordenable de videos
-│   ├── VideoRow.tsx         # Fila: rank, dot plataforma, título, fecha, views, retención, engage
-│   ├── GrowthChart.tsx      # AreaChart seguidores por plataforma
-│   ├── PlatformPieChart.tsx # PieChart distribución views
-│   ├── EngagementBarChart.tsx # BarChart likes/comments/shares por video
-│   └── ChartTooltip.tsx     # Tooltip compartido para todos los gráficos
-├── data/demo.ts             # 10 videos + 5 semanas seguidores de ejemplo
-├── utils/formatters.ts      # fmt(number), engagementRate(video), retentionColor(pct)
-├── Dashboard.tsx            # Orquesta todo
-├── App.tsx                  # Renderiza Dashboard
+├── types/                   # index.ts (Platform, Video, VideoWithMetrics, SortKey…), content.ts, audience.ts, insights.ts
+├── lib/                     # supabase.ts, queryClient.ts (react-query), api.ts (POST autenticado a /api)
+├── context/                 # AuthContext (magic link), AccountContext (cuenta activa; modo legacy/multi)
+├── hooks/                   # react-query: useVideos(accountId), useFollowerCounts, useVideoDetail, useVideoHistory,
+│                            #   useAccountInsights, usePlatformAccounts, useCompetitors, useStrategy, useDashboardData
+├── components/              # StatCard, PlatformFilter, VideoList/Row, charts, ChartTooltip, Layout, RetentionChart, ui.tsx (kit)
+├── pages/                   # Videos, VideoDetail, Insights ("Qué funciona"), Audience, Competition, Strategy, Accounts, Login
+├── data/demo.ts             # data de ejemplo (fallback)
+├── utils/                   # formatters.ts, metrics.ts (adaptador de lib/analysis), accounts.ts
+├── Dashboard.tsx            # Resumen (orquesta stats y gráficos)
+├── App.tsx                  # Router: /a/:slug/* (multi-cuenta) y /* (legado)
 └── main.tsx                 # Entry point (SIN imports de CSS)
 
-scripts/
-├── fetch-ig-metrics.ts      # Trae Reels + seguidores de IG y guarda en Supabase
-├── fetch-yt-metrics.ts      # Trae videos + Shorts + suscriptores de YT y guarda en Supabase
-└── fetch-tiktok-metrics.ts  # Trae videos + seguidores de TikTok via API v2
+lib/                         # compartido front + backend (imports con extensión .js)
+├── ingest/                  # fetchers normalizados (instagram, youtube, tiktok + extras/analytics), persist, sync, tokens
+├── analysis/                # metrics, scoring, patterns, diagnostics, alerts, benchmarks, report, pipeline (funciones puras + tests)
+├── video-analysis/          # schema (zod), prompts, ffmpeg utils, analyze (Claude tool use), queue
+├── competitors/             # fetch (Business Discovery / YouTube pública), metrics, niche (temas + oportunidades), reference, sync
+├── strategy/                # types, validate (reglas duras), predict, calendar, generate, persist (+ loop de aprendizaje)
+├── server/auth.ts           # JWT de Supabase en endpoints, state firmado de OAuth
+└── handlers/                # lógica de cada endpoint (las funciones de api/ son solo dispatchers)
 
-api/
-├── auth/
-│   └── tiktok/
-│       ├── index.ts         # Inicia OAuth flow → redirige a TikTok
-│       └── callback.ts      # Recibe code, intercambia por token, guarda en DB
-└── cron/
-    ├── fetch-ig-metrics.ts  # Vercel serverless cron (cada 6hs)
-    ├── fetch-yt-metrics.ts  # Vercel serverless cron (cada 6hs, offset +3)
-    └── fetch-tiktok-metrics.ts # Vercel serverless cron (cada 6hs, offset +1)
+api/                         # 5 funciones de Vercel (el plan Hobby limita a 12)
+├── cron/[job].ts            # sync | daily | analyze | refresh-tokens | competitors
+├── auth/[provider]/{index,callback}.ts   # OAuth Instagram / YouTube
+├── tiktok/[action].ts       # upload (userscript) | token | manual
+└── actions/[action].ts      # sync-now | niche | reference | strategy | script | feedback
 
-public/
-├── terms.html               # Terms of Service (requerido por TikTok)
-└── privacy.html             # Privacy Policy (requerido por TikTok)
-
-vercel.json                  # Config de cron jobs + rewrites
+worker/                      # análisis de video (Docker: ffmpeg, yt-dlp, faster-whisper, tesseract) — fuera de Vercel
+scripts/                     # sync.ts (manual), seed-eiz-account.ts, tiktok-userscript.user.js
+supabase/migrations/         # SQL versionado
+docs/                        # PROMPT_MEJORAS_V2.md, ESTADO_V2.md, tiktok-endpoints.md
+public/                      # terms.html, privacy.html
+vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites (SPA)
 ```
 
 ## Comportamiento
@@ -139,6 +147,10 @@ vercel.json                  # Config de cron jobs + rewrites
 - **Serie de tiempo en metrics**: Permite ver crecimiento de videos, no solo último snapshot.
 - **TypeScript estricto**: Sin `any`, todo tipado.
 - **Sin Tailwind**: Inline styles para mantener todo autocontenido.
+- **Una sola implementación de ingesta**: `lib/ingest/*` la usan el cron, el script manual y los endpoints. Nada de lógica duplicada.
+- **Crons una vez por día** (plan Hobby): `sync` y `daily`. Los comentarios viejos de "cada 6hs" ya no aplican.
+- **El LLM narra, el código calcula**: cifras, scores, lifts, reglas del `dont_list` y capacidad de posteo se validan en código.
+- **Degradación elegante**: sin migraciones aplicadas o sin base, el dashboard muestra data de ejemplo y la ingesta no rompe.
 
 ## Roadmap
 
@@ -158,8 +170,8 @@ vercel.json                  # Config de cron jobs + rewrites
 - [x] Token de larga duración (permanente, no expira)
 - [x] IG Business Account ID: 17841402272425360 (username: eiz.gg)
 - [x] FB Page ID: 878127812525518
-- [x] Script `scripts/fetch-ig-metrics.ts` — trae Reels + follower_counts
-- [x] Vercel cron `api/cron/fetch-ig-metrics.ts` cada 6hs
+- [x] Script `scripts/fetch-ig-metrics.ts` — trae Reels + follower_counts _(reemplazado por `lib/ingest/instagram.ts` + `scripts/sync.ts`)_
+- [x] Vercel cron de IG _(hoy: `/api/cron/sync`, 1 vez por día)_
 - [x] `vercel.json` configurado
 - [x] 47 Reels con métricas reales en Supabase
 - [x] Métricas: views, likes, comments, shares, saved, reach (v25.0)
@@ -171,8 +183,8 @@ vercel.json                  # Config de cron jobs + rewrites
 - [x] YouTube Data API v3 habilitada
 - [x] API Key creada (en `.env` como `YOUTUBE_API_KEY`)
 - [x] Channel ID: UCEvcE_u4PBXMpQ-EcT2-pJA (@EIZ98, 3170 subs)
-- [x] Script `scripts/fetch-yt-metrics.ts` — trae Shorts + suscriptores
-- [x] Vercel cron `api/cron/fetch-yt-metrics.ts` cada 6hs
+- [x] Script `scripts/fetch-yt-metrics.ts` — trae Shorts + suscriptores _(reemplazado por `lib/ingest/youtube.ts`)_
+- [x] Vercel cron de YT _(hoy: `/api/cron/sync`, 1 vez por día)_
 - [x] 18 Shorts con métricas reales en Supabase
 - [x] Métricas: views, likes, comments (shares/saves no disponibles via Data API)
 - [ ] YouTube Analytics API para retención (requiere OAuth, futuro)
@@ -190,12 +202,24 @@ vercel.json                  # Config de cron jobs + rewrites
 - [x] App en portal, OAuth flow implementado, pero descartado por políticas de la plataforma.
 
 
+### v2 — plataforma de análisis y creación de contenido (ver `docs/PROMPT_MEJORAS_V2.md` y `docs/ESTADO_V2.md`)
+
+- [x] Arreglos urgentes: token fuera del userscript, `youtube`+`format`, service role, vista `latest_video_metrics`
+- [x] Fase A: multi-cuenta (schema, RLS, seed, auth, router, react-query, OAuth IG/YT, tokens de TikTok por cuenta)
+- [x] Fase B: schema de contenido
+- [x] Fase C: extras de IG (demografía, horas online, diarias, comentarios) y YouTube Analytics (retención, curva, tráfico, demografía) — **[VERIFICAR] con llamadas reales**
+- [x] Fase D: scoring, patrones (lift), diagnósticos, alertas, reporte semanal
+- [x] Fase E: pipeline de análisis de video (worker Docker) — falta desplegar el worker
+- [x] Fase F: competencia y nicho
+- [x] Fase G: estrategia (ideas con evidencia, guiones, calendario, feedback, loop de aprendizaje)
+- [ ] Pendientes que dependen de credenciales/DB/deploy: ver `docs/ESTADO_V2.md`
+
 ### Futuro
 
 > Plan detallado de v2 (multi-cuenta, retención/audiencia, análisis de guion, competencia, estrategia): `docs/PROMPT_MEJORAS_V2.md`
 
 - [ ] Deploy a Vercel (configurar env vars en dashboard)
-- [ ] Vista drill-down por video (useVideoHistory)
+- [x] Vista drill-down por video (`/videos/:id`)
 - [ ] Comparación entre videos
 - [ ] Alertas (video que explota, engagement que cae)
 - [ ] YouTube Analytics API para retención (requiere OAuth)
@@ -214,7 +238,7 @@ vercel.json                  # Config de cron jobs + rewrites
 - **TikTok App ID:** 7622686579254134791 (app: eiz-metrics, sandbox)
 - **TikTok Scopes:** user.info.basic, user.info.stats, video.list
 - **Métricas TikTok (API v2):** views, likes, comments, shares
-- **TikTok OAuth Redirect:** `https://eiz-metrics.vercel.app/api/auth/tiktok/callback`
+- **TikTok:** la API oficial fue rechazada; se usa el userscript (los endpoints `api/auth/tiktok` y el cron de TikTok se eliminaron)
 
 ## Convenciones de código
 
@@ -230,4 +254,8 @@ vercel.json                  # Config de cron jobs + rewrites
 npm run dev          # Levantar dev server
 npx tsc --noEmit     # Verificar tipos sin compilar
 npm run build        # Build de producción
+npm run typecheck    # tsc del front (src) y del backend (lib, api, scripts, worker)
+npm run lint         # ESLint (ts/tsx + userscript)
+npm test             # Vitest
+npm run sync         # Sincroniza IG/YT a mano (-- --platform instagram)
 ```

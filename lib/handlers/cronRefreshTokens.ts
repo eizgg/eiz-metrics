@@ -4,10 +4,10 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createServiceClient } from '../../lib/ingest/sync.js'
-import { refreshExpiringTokens } from '../../lib/ingest/tokens.js'
+import { createServiceClient } from '../ingest/sync.js'
+import { refreshExpiringTokens } from '../ingest/tokens.js'
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function cronRefreshTokens(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
   const cronSecret = process.env.CRON_SECRET
   if (cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) return res.status(401).json({ error: 'Unauthorized' })

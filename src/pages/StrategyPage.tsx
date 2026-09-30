@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Button, Card, COLORS, EmptyState, MONO, PageHeader, Pill, inputStyle } from '../components/ui'
+import { Button, Card, COLORS, EmptyState, Markdown, MONO, PageHeader, Pill, inputStyle } from '../components/ui'
 import { useAccount } from '../context/AccountContext'
 import { useDashboardVideos } from '../hooks/useDashboardData'
-import { useAccountProfile, useContentIdeas } from '../hooks/useStrategy'
+import { useQueryClient } from '@tanstack/react-query'
+import { apiPost } from '../lib/api'
+import { useAccountProfile, useCalendar, useContentIdeas, useScripts } from '../hooks/useStrategy'
 import type { ContentIdea } from '../types/insights'
 
 const STATUS_COLOR: Record<ContentIdea['status'], string> = {
@@ -16,6 +18,22 @@ export function StrategyPage() {
   const { videos } = useDashboardVideos()
   const [linking, setLinking] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const client = useQueryClient()
+  const { entries: calendar } = useCalendar(accountId)
+  const { scripts } = useScripts(ideas.map((i) => i.id))
+  const [busy, setBusy] = useState<string | null>(null)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [feedbackMd, setFeedbackMd] = useState<string | null>(null)
+
+  async function run(action: string, body: Record<string, unknown>, key: string): Promise<{ markdown?: string } | null> {
+    setBusy(key)
+    setError(null)
+    const { data, error: err } = await apiPost<{ markdown?: string }>(`/api/actions/${action}`, body)
+    if (err) setError(err)
+    await client.invalidateQueries()
+    setBusy(null)
+    return data
+  }
 
   if (loading) return <span style={{ color: COLORS.dim, fontSize: 14 }}>Cargando…</span>
 
@@ -23,7 +41,11 @@ export function StrategyPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <PageHeader title="Estrategia" subtitle="Ideas con evidencia, guiones y calendario respetando la identidad de la cuenta" />
+      <PageHeader
+        title="Estrategia"
+        subtitle="Ideas con evidencia, guiones y calendario respetando la identidad de la cuenta"
+        right={<Button disabled={!accountId || busy !== null} onClick={() => void run('strategy', { accountId }, 'strategy')}>{busy === 'strategy' ? 'Generando…' : 'Generar ideas y calendario'}</Button>}
+      />
 
       {profile && (
         <Card title="Identidad de la cuenta">
@@ -45,7 +67,7 @@ export function StrategyPage() {
       {ideas.length === 0 ? (
         <EmptyState
           title="Todavía no hay ideas generadas"
-          hint="El generador (lib/strategy + api/strategy/generate) las crea a partir de los patrones, los comentarios y el perfil de la cuenta."
+          hint="Apretá “Generar ideas y calendario”: se crean a partir de tus patrones, los comentarios y el perfil de la cuenta."
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -73,6 +95,9 @@ export function StrategyPage() {
                     <Button variant="ghost" onClick={() => void setStatus(idea.id, 'descartada').then(setError)}>Descartar</Button>
                   </>
                 )}
+                {(idea.status === 'aceptada' || idea.status === 'propuesta') && !scripts.some((sc) => sc.ideaId === idea.id) && (
+                  <Button variant="ghost" disabled={busy !== null} onClick={() => void run('script', { ideaId: idea.id }, idea.id)}>{busy === idea.id ? 'Escribiendo…' : 'Generar guion'}</Button>
+                )}
                 {idea.status === 'aceptada' && (
                   linking === idea.id ? (
                     <select
@@ -90,10 +115,53 @@ export function StrategyPage() {
                   )
                 )}
               </div>
+              {scripts.filter((sc) => sc.ideaId === idea.id).slice(0, 1).map((sc) => (
+                <div key={sc.id} style={{ marginTop: 12, padding: 12, borderRadius: 10, background: 'rgba(168,85,247,0.06)', fontSize: 13, color: COLORS.textSoft, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {sc.beats.map((b, i) => (
+                    <div key={i}><span style={{ fontFamily: MONO, color: COLORS.primaryLight }}>[{b.start}-{b.end}s] {b.label}:</span> {b.text}</div>
+                  ))}
+                  {sc.onScreenText.length > 0 && <div><strong>Texto en pantalla:</strong> {sc.onScreenText.map((t) => `"${t}"`).join(' · ')}</div>}
+                  {sc.suggestedAudio && <div><strong>Audio:</strong> {sc.suggestedAudio}</div>}
+                  {sc.editNotes && <div><strong>Edición:</strong> {sc.editNotes}</div>}
+                </div>
+              ))}
             </Card>
           ))}
         </div>
       )}
+
+      {calendar.length > 0 && (
+        <Card title="Calendario (próximos 14 días)">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+            {calendar.map((e) => {
+              const idea = ideas.find((i) => i.id === e.ideaId)
+              return (
+                <div key={e.id} style={{ padding: 10, borderRadius: 10, border: `1px solid ${COLORS.cardBorder}`, background: e.isRestDay ? 'transparent' : 'rgba(168,85,247,0.06)', minHeight: 70 }}>
+                  <div style={{ fontFamily: MONO, fontSize: 11, color: COLORS.muted }}>{e.day}{e.slotTime ? ` · ${e.slotTime.slice(0, 5)}` : ''}</div>
+                  <div style={{ fontSize: 12, marginTop: 4, color: e.isRestDay ? COLORS.dim : COLORS.textSoft }}>{idea ? idea.title : e.note ?? '—'}</div>
+                  {idea && e.note && <div style={{ fontSize: 11, color: COLORS.warn, marginTop: 2 }}>{e.note}</div>}
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
+
+      <Card title="Feedback antes de grabar">
+        <textarea
+          value={feedbackText}
+          onChange={(e) => setFeedbackText(e.target.value)}
+          placeholder="Pegá tu guion o describí el video…"
+          rows={5}
+          style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+        />
+        <div style={{ marginTop: 10 }}>
+          <Button disabled={busy !== null || !feedbackText.trim()} onClick={() => void run('feedback', { accountId, script: feedbackText }, 'feedback').then((d) => setFeedbackMd(d?.markdown ?? null))}>
+            {busy === 'feedback' ? 'Analizando…' : 'Pedir feedback'}
+          </Button>
+        </div>
+        {feedbackMd && <div style={{ marginTop: 14 }}><Markdown text={feedbackMd} /></div>}
+      </Card>
 
       {published.length > 0 && (
         <Card title="Loop de aprendizaje: predicho vs. real">

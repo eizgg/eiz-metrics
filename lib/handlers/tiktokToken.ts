@@ -6,10 +6,10 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import crypto from 'crypto'
-import { getOwnedPlatformAccount, getUser } from '../../lib/server/auth.js'
-import { createServiceClient } from '../../lib/ingest/sync.js'
+import { getOwnedPlatformAccount, getUser } from '../server/auth.js'
+import { createServiceClient } from '../ingest/sync.js'
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function tiktokToken(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
     const supabase = createServiceClient()

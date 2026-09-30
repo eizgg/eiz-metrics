@@ -9,10 +9,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import crypto from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { createServiceClient } from '../../lib/ingest/sync.js'
-import { normalizeTikTok, tiktokUploadSchema } from '../../lib/ingest/tiktok.js'
-import { isMissingSchema, persistFetchResult } from '../../lib/ingest/persist.js'
-import type { PlatformAccountRef } from '../../lib/ingest/types.js'
+import { createServiceClient } from '../ingest/sync.js'
+import { normalizeTikTok, tiktokUploadSchema } from '../ingest/tiktok.js'
+import { isMissingSchema, persistFetchResult } from '../ingest/persist.js'
+import type { PlatformAccountRef } from '../ingest/types.js'
 
 export function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex')
@@ -64,7 +64,7 @@ async function authenticate(supabase: SupabaseClient, token: string): Promise<Pl
   return null
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function tiktokUpload(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' })
   }
