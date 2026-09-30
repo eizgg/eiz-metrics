@@ -192,6 +192,8 @@ vercel.json                  # Config de cron jobs + rewrites
 
 ### Futuro
 
+> Plan detallado de v2 (multi-cuenta, retención/audiencia, análisis de guion, competencia, estrategia): `docs/PROMPT_MEJORAS_V2.md`
+
 - [ ] Deploy a Vercel (configurar env vars en dashboard)
 - [ ] Vista drill-down por video (useVideoHistory)
 - [ ] Comparación entre videos
