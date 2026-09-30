@@ -7,6 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchInstagram } from './instagram.js'
 import { fetchYoutube } from './youtube.js'
 import { isMissingSchema, persistFetchResult } from './persist.js'
+import { getYoutubeAccessToken } from './tokens.js'
 import type { FetchResult, IngestPlatform, PlatformAccountRef, SyncSummary } from './types.js'
 
 function requireEnv(name: string): string {
@@ -87,14 +88,36 @@ export async function resolveAccounts(supabase: SupabaseClient, only?: IngestPla
   return loadFromEnv(only)
 }
 
-async function fetchForAccount(ref: PlatformAccountRef): Promise<FetchResult> {
+// Una cuenta puntual por id (botón "sincronizar ahora")
+export async function resolveAccountById(supabase: SupabaseClient, platformAccountId: string): Promise<PlatformAccountRef | null> {
+  const { data, error } = await supabase
+    .from('platform_accounts')
+    .select('id, platform, handle, external_id, platform_credentials(access_token, extra)')
+    .eq('id', platformAccountId)
+    .maybeSingle()
+  if (error || !data) return null
+  const row = data as unknown as PlatformAccountRow
+  const cred = row.platform_credentials?.[0]
+  return {
+    id: row.id,
+    platform: row.platform,
+    handle: row.handle,
+    externalId: row.external_id,
+    accessToken: cred?.access_token ?? null,
+    extra: cred?.extra ?? {},
+  }
+}
+
+async function fetchForAccount(supabase: SupabaseClient, ref: PlatformAccountRef): Promise<FetchResult> {
   if (!ref.accessToken) throw new Error(`Sin credenciales para ${ref.platform}:${ref.handle}`)
   switch (ref.platform) {
     case 'instagram':
       return fetchInstagram({ accessToken: ref.accessToken, igUserId: ref.externalId })
-    case 'youtube':
-      // Hoy YouTube usa API key; con OAuth (Fase C) el token vive en platform_credentials
-      return fetchYoutube({ apiKey: ref.accessToken, channelId: ref.externalId })
+    case 'youtube': {
+      // Con OAuth (refresh token en platform_credentials) se usa bearer; si no, la API key del modo legado
+      const bearer = ref.id && ref.extra.auth === 'oauth' ? await getYoutubeAccessToken(supabase, ref.id) : null
+      return fetchYoutube(bearer ? { bearer, channelId: ref.externalId } : { apiKey: ref.accessToken, channelId: ref.externalId })
+    }
     case 'tiktok':
       throw new Error('TikTok se sincroniza por userscript, no por cron')
   }
@@ -124,7 +147,7 @@ export async function syncPlatformAccount(supabase: SupabaseClient, ref: Platfor
     errors: [],
   }
   try {
-    const result = await fetchForAccount(ref)
+    const result = await fetchForAccount(supabase, ref)
     summary.videosFound = result.videos.length
     summary.followers = result.followers
     const outcome = await persistFetchResult(supabase, ref, result)

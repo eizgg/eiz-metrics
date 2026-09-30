@@ -1,5 +1,7 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import { useVideos } from './hooks/useVideos'
+import { useAccount } from './context/AccountContext'
+import { useBasePath } from './components/Layout'
 import { useFollowerCounts } from './hooks/useFollowerCounts'
 import { demoVideos, demoFollowers } from './data/demo'
 import { StatCard } from './components/StatCard'
@@ -9,19 +11,10 @@ import { GrowthChart } from './components/GrowthChart'
 import { PlatformPieChart } from './components/PlatformPieChart'
 import { EngagementBarChart } from './components/EngagementBarChart'
 import type { PlatformFilter as PlatformFilterType, SortKey, VideoWithMetrics } from './types'
-import { formatNumber, engagementRate } from './utils/formatters'
+import { formatNumber, engagementRate, matchesPlatformFilter } from './utils/formatters'
 
 const styles: Record<string, CSSProperties> = {
-  page: {
-    minHeight: '100vh',
-    background: 'linear-gradient(160deg, #0a0010 0%, #0f0519 45%, #110820 100%)',
-    fontFamily: "'DM Sans', sans-serif",
-    color: '#f3e8ff',
-    padding: '32px 24px',
-  },
   inner: {
-    maxWidth: 1100,
-    margin: '0 auto',
     display: 'flex',
     flexDirection: 'column',
     gap: 28,
@@ -65,9 +58,17 @@ const styles: Record<string, CSSProperties> = {
   },
 }
 
+const PLATFORM_META = [
+  { key: 'instagram', label: 'Instagram', color: '#E1306C' },
+  { key: 'tiktok', label: 'TikTok', color: '#00f2ea' },
+  { key: 'youtube', label: 'YouTube', color: '#FF0000' },
+] as const
+
 export function Dashboard() {
-  const { videos: liveVideos, loading } = useVideos()
-  const { followers: liveFollowers } = useFollowerCounts()
+  const { accountId } = useAccount()
+  const base = useBasePath()
+  const { videos: liveVideos, loading } = useVideos(accountId)
+  const { followers: liveFollowers } = useFollowerCounts(accountId)
 
   const hasAnyMetrics = liveVideos.some(v => v.fetchedAt !== null)
   const isDemo = !loading && (liveVideos.length === 0 || !hasAnyMetrics)
@@ -78,7 +79,7 @@ export function Dashboard() {
   const [sortKey, setSortKey] = useState<SortKey>('views')
 
   const filteredVideos = useMemo(
-    () => platformFilter === 'all' ? videos : videos.filter((v) => v.platform === platformFilter),
+    () => videos.filter((v) => matchesPlatformFilter(v, platformFilter)),
     [videos, platformFilter]
   )
 
@@ -87,14 +88,8 @@ export function Dashboard() {
     instagram: videos.filter((v) => v.platform === 'instagram').length,
     tiktok: videos.filter((v) => v.platform === 'tiktok').length,
     youtube: videos.filter((v) => v.platform === 'youtube').length,
-    youtube_shorts: videos.filter((v) => v.platform === 'youtube_shorts').length,
+    youtube_shorts: videos.filter((v) => v.platform === 'youtube' && v.format === 'short').length,
   }), [videos])
-
-  const PLATFORM_META = [
-    { key: 'instagram', label: 'Instagram', color: '#E1306C' },
-    { key: 'tiktok', label: 'TikTok', color: '#00f2ea' },
-    { key: 'youtube', label: 'YouTube', color: '#FF0000' },
-  ] as const
 
   // Stat cards
   const totalViews = filteredVideos.reduce((s, v) => s + v.views, 0)
@@ -144,7 +139,7 @@ export function Dashboard() {
   const totalFollowers = useMemo(() => {
     const last = followerData[followerData.length - 1]
     if (!last) return 0
-    return (last.instagram ?? 0) + (last.tiktok ?? 0) + (last.youtube ?? 0) + (last.youtube_shorts ?? 0)
+    return (last.instagram ?? 0) + (last.tiktok ?? 0) + (last.youtube ?? 0)
   }, [followerData])
 
   const followersBreakdown = useMemo(() => {
@@ -157,21 +152,16 @@ export function Dashboard() {
   }, [followerData])
 
   if (loading) {
-    return (
-      <div style={{ ...styles.page, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ color: '#6b7280', fontSize: 14 }}>Cargando métricas…</span>
-      </div>
-    )
+    return <span style={{ color: '#6b7280', fontSize: 14 }}>Cargando métricas…</span>
   }
 
   return (
-    <div style={styles.page}>
       <div style={styles.inner}>
 
         {/* Top bar */}
         <div style={styles.topBar}>
           <div>
-            <div style={styles.heading}>EIZ Metrics</div>
+            <div style={styles.heading}>Resumen</div>
             <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
               Dashboard de contenido musical
             </div>
@@ -245,9 +235,8 @@ export function Dashboard() {
         <EngagementBarChart videos={filteredVideos} />
 
         {/* Video list */}
-        <VideoList videos={filteredVideos} sortKey={sortKey} onSortChange={setSortKey} />
+        <VideoList videos={filteredVideos} sortKey={sortKey} onSortChange={setSortKey} linkBase={isDemo ? undefined : base} />
 
       </div>
-    </div>
   )
 }

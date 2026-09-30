@@ -1,9 +1,12 @@
 import type { CSSProperties } from 'react'
 import type { VideoWithMetrics, SortKey } from '../types'
+import { Link } from 'react-router-dom'
 import { VideoRow } from './VideoRow'
 import { engagementRate } from '../utils/formatters'
 
 interface VideoListProps {
+  // Si se pasa, cada fila linkea al drill-down `${linkBase}/videos/:id`
+  linkBase?: string
   videos: VideoWithMetrics[]
   sortKey: SortKey
   onSortChange: (key: SortKey) => void
@@ -70,7 +73,7 @@ const styles: Record<string, CSSProperties> = {
   },
 }
 
-export function VideoList({ videos, sortKey, onSortChange }: VideoListProps) {
+export function VideoList({ videos, sortKey, onSortChange, linkBase }: VideoListProps) {
   const sorted = sortVideos(videos, sortKey)
 
   return (
@@ -112,7 +115,13 @@ export function VideoList({ videos, sortKey, onSortChange }: VideoListProps) {
       ) : (
         <div style={{ padding: '4px 0' }}>
           {sorted.map((v, i) => (
-            <VideoRow key={v.id} video={v} rank={i + 1} />
+            linkBase !== undefined ? (
+              <Link key={v.id} to={`${linkBase}/videos/${v.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <VideoRow video={v} rank={i + 1} />
+              </Link>
+            ) : (
+              <VideoRow key={v.id} video={v} rank={i + 1} />
+            )
           ))}
         </div>
       )}

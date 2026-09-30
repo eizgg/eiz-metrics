@@ -1,9 +1,12 @@
-export type Platform = 'instagram' | 'tiktok' | 'youtube' | 'youtube_shorts'
-export type PlatformFilter = Platform | 'all'
+export type Platform = 'instagram' | 'tiktok' | 'youtube'
+export type VideoFormat = 'short' | 'long' | 'live' | 'post'
+// 'youtube_shorts' es un filtro virtual: platform youtube + format short
+export type PlatformFilter = Platform | 'all' | 'youtube_shorts'
 
 export interface Video {
   id: string
   platform: Platform
+  format: VideoFormat | null
   externalId: string
   title: string | null
   url: string | null
@@ -12,6 +15,7 @@ export interface Video {
 }
 
 export interface VideoWithMetrics extends Video {
+  platformAccountId?: string | null
   views: number
   likes: number
   comments: number
@@ -37,6 +41,10 @@ export interface VideoMetricsRow {
   avg_watch_time_seconds: number | null
   reach: number | null
   impressions: number | null
+  watched_full_pct?: number | null
+  new_followers?: number | null
+  traffic_sources?: Record<string, number> | null
+  profile_visits?: number | null
 }
 
 export interface FollowerDataPoint {
@@ -44,7 +52,6 @@ export interface FollowerDataPoint {
   instagram?: number
   tiktok?: number
   youtube?: number
-  youtube_shorts?: number
 }
 
 export interface PlatformConfig {

@@ -39,9 +39,17 @@ interface YTVideosResponse {
   }>
 }
 
-async function ytGet<T>(path: string, apiKey: string): Promise<T> {
+// Auth: API key (canal público propio) o bearer OAuth (Fase A/C). Con OAuth no hace falta key.
+export interface YouTubeAuth {
+  apiKey?: string
+  bearer?: string
+}
+
+async function ytGet<T>(path: string, auth: string | YouTubeAuth): Promise<T> {
+  const a: YouTubeAuth = typeof auth === 'string' ? { apiKey: auth } : auth
   const separator = path.includes('?') ? '&' : '?'
-  const res = await fetch(`${YT_BASE}/${path}${separator}key=${apiKey}`)
+  const url = a.bearer ? `${YT_BASE}/${path}` : `${YT_BASE}/${path}${separator}key=${a.apiKey ?? ''}`
+  const res = await fetch(url, a.bearer ? { headers: { Authorization: `Bearer ${a.bearer}` } } : undefined)
   if (!res.ok) {
     const err = (await res.json()) as YTErrorResponse
     throw new Error(`YouTube API error: ${err.error.message}`)
@@ -49,8 +57,7 @@ async function ytGet<T>(path: string, apiKey: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export interface YouTubeCredentials {
-  apiKey: string
+export interface YouTubeCredentials extends YouTubeAuth {
   channelId: string
 }
 
@@ -59,7 +66,7 @@ export async function fetchYoutube(cred: YouTubeCredentials, maxVideos = 50): Pr
 
   const channelData = await ytGet<YTChannelResponse>(
     `channels?part=statistics,contentDetails&id=${cred.channelId}`,
-    cred.apiKey
+    cred
   )
   const channel = channelData.items?.[0]
   if (!channel) throw new Error('Canal de YouTube no encontrado')
@@ -71,14 +78,14 @@ export async function fetchYoutube(cred: YouTubeCredentials, maxVideos = 50): Pr
 
   const playlist = await ytGet<YTPlaylistResponse>(
     `playlistItems?part=contentDetails&playlistId=${uploads}&maxResults=${maxVideos}`,
-    cred.apiKey
+    cred
   )
   const videoIds = playlist.items.map((i) => i.contentDetails.videoId)
   if (videoIds.length === 0) return result
 
   const videosData = await ytGet<YTVideosResponse>(
     `videos?part=statistics,contentDetails,snippet&id=${videoIds.join(',')}`,
-    cred.apiKey
+    cred
   )
 
   for (const v of videosData.items) {

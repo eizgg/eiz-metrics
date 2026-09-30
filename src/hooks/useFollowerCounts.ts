@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { FollowerDataPoint } from '../types'
 
@@ -14,50 +14,30 @@ interface FollowerRow {
   recorded_at: string
 }
 
-export function useFollowerCounts(): UseFollowerCountsResult {
-  const [followers, setFollowers] = useState<FollowerDataPoint[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+async function fetchFollowers(accountId: string | null): Promise<FollowerDataPoint[]> {
+  const base = supabase.from('follower_counts').select(accountId ? 'platform, count, recorded_at, platform_accounts!inner(account_id)' : 'platform, count, recorded_at')
+  const query = accountId ? base.eq('platform_accounts.account_id', accountId) : base
+  const { data, error } = await query.order('recorded_at', { ascending: true })
+  if (error) throw new Error(error.message)
 
-  useEffect(() => {
-    let cancelled = false
+  // Pivot de filas a FollowerDataPoint[] (una por fecha)
+  const byDate = new Map<string, FollowerDataPoint>()
+  for (const row of (data ?? []) as unknown as FollowerRow[]) {
+    const existing = byDate.get(row.recorded_at) ?? { date: row.recorded_at }
+    byDate.set(row.recorded_at, { ...existing, [row.platform]: row.count })
+  }
+  return Array.from(byDate.values())
+}
 
-    async function fetchFollowers() {
-      setLoading(true)
-      setError(null)
-
-      const { data, error: fetchError } = await supabase
-        .from('follower_counts')
-        .select('platform, count, recorded_at')
-        .order('recorded_at', { ascending: true })
-
-      if (fetchError || !data) {
-        if (!cancelled) {
-          setError(fetchError?.message ?? 'Error fetching follower counts')
-          setLoading(false)
-        }
-        return
-      }
-
-      // Pivot rows into FollowerDataPoint[]
-      const byDate = new Map<string, FollowerDataPoint>()
-      for (const row of data as FollowerRow[]) {
-        const existing = byDate.get(row.recorded_at) ?? { date: row.recorded_at }
-        byDate.set(row.recorded_at, {
-          ...existing,
-          [row.platform]: row.count,
-        })
-      }
-
-      if (!cancelled) {
-        setFollowers(Array.from(byDate.values()))
-        setLoading(false)
-      }
-    }
-
-    fetchFollowers()
-    return () => { cancelled = true }
-  }, [])
-
-  return { followers, loading, error }
+export function useFollowerCounts(accountId: string | null, enabled = true): UseFollowerCountsResult {
+  const query = useQuery({
+    queryKey: ['followers', accountId],
+    queryFn: () => fetchFollowers(accountId),
+    enabled,
+  })
+  return {
+    followers: query.data ?? [],
+    loading: enabled && query.isLoading,
+    error: query.error ? (query.error as Error).message : null,
+  }
 }

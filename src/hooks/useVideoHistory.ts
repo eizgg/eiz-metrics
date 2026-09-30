@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { VideoMetricsRow } from '../types'
 
@@ -8,38 +8,24 @@ interface UseVideoHistoryResult {
   error: string | null
 }
 
+// Serie de tiempo completa de un video (drill-down)
 export function useVideoHistory(videoId: string | null): UseVideoHistoryResult {
-  const [history, setHistory] = useState<VideoMetricsRow[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!videoId) {
-      setHistory([])
-      return
-    }
-
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-
-    supabase
-      .from('video_metrics')
-      .select('*')
-      .eq('video_id', videoId)
-      .order('fetched_at', { ascending: true })
-      .then(({ data, error: fetchError }) => {
-        if (cancelled) return
-        if (fetchError) {
-          setError(fetchError.message)
-        } else {
-          setHistory((data ?? []) as VideoMetricsRow[])
-        }
-        setLoading(false)
-      })
-
-    return () => { cancelled = true }
-  }, [videoId])
-
-  return { history, loading, error }
+  const query = useQuery({
+    queryKey: ['video-history', videoId],
+    enabled: videoId !== null,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('video_metrics')
+        .select('*')
+        .eq('video_id', videoId as string)
+        .order('fetched_at', { ascending: true })
+      if (error) throw new Error(error.message)
+      return (data ?? []) as VideoMetricsRow[]
+    },
+  })
+  return {
+    history: query.data ?? [],
+    loading: videoId !== null && query.isLoading,
+    error: query.error ? (query.error as Error).message : null,
+  }
 }

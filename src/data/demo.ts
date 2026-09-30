@@ -5,6 +5,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'ig-1',
     platform: 'instagram',
+    format: 'short',
     externalId: 'ig_demo_1',
     title: 'Barrio de noche 🌃 snippet nuevo tema',
     url: null,
@@ -24,6 +25,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'ig-2',
     platform: 'instagram',
+    format: 'short',
     externalId: 'ig_demo_2',
     title: 'Grabando en el pasillo — proceso',
     url: null,
@@ -43,6 +45,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'ig-3',
     platform: 'instagram',
+    format: 'short',
     externalId: 'ig_demo_3',
     title: 'La calle me inspira 🎵 beat nuevo',
     url: null,
@@ -62,6 +65,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'ig-4',
     platform: 'instagram',
+    format: 'short',
     externalId: 'ig_demo_4',
     title: 'Freestyle improvisado — miércoles',
     url: null,
@@ -82,6 +86,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'tt-1',
     platform: 'tiktok',
+    format: 'short',
     externalId: 'tt_demo_1',
     title: 'POV: escribís una canción a las 3am',
     url: null,
@@ -101,6 +106,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'tt-2',
     platform: 'tiktok',
+    format: 'short',
     externalId: 'tt_demo_2',
     title: 'El beat que hice en 10 minutos',
     url: null,
@@ -120,6 +126,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'tt-3',
     platform: 'tiktok',
+    format: 'short',
     externalId: 'tt_demo_3',
     title: 'Behind the scenes — grabando voces',
     url: null,
@@ -139,6 +146,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'tt-4',
     platform: 'tiktok',
+    format: 'short',
     externalId: 'tt_demo_4',
     title: 'Mi setup casero para grabar 🎙️',
     url: null,
@@ -159,6 +167,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'yt-1',
     platform: 'youtube',
+    format: 'short',
     externalId: 'yt_demo_1',
     title: 'EIZ — Barrio Viejo (Official Short)',
     url: null,
@@ -178,6 +187,7 @@ export const demoVideos: VideoWithMetrics[] = [
   {
     id: 'yt-2',
     platform: 'youtube',
+    format: 'long',
     externalId: 'yt_demo_2',
     title: 'Reaccionando a mis primeras letras 😬',
     url: null,
