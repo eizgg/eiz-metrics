@@ -3,7 +3,7 @@
 
 import { z } from 'zod'
 import { emptyMetric } from './types.js'
-import type { FetchResult, NormalizedMetric, NormalizedVideo } from './types.js'
+import type { CommentInput, FetchResult, NormalizedMetric, NormalizedVideo, RetentionCurveInput } from './types.js'
 import { extractHashtags, truncate } from './text.js'
 
 const num = z.number().finite()
@@ -72,6 +72,8 @@ export function toIsoDate(value: string | number | undefined): string | null {
 export function normalizeTikTok(payload: TikTokUploadPayload, handle: string): FetchResult {
   const videos: NormalizedVideo[] = []
   const metrics: NormalizedMetric[] = []
+  const curves: RetentionCurveInput[] = []
+  const comments: CommentInput[] = []
 
   for (const v of payload.videos ?? []) {
     videos.push({
@@ -96,7 +98,29 @@ export function normalizeTikTok(payload: TikTokUploadPayload, handle: string): F
       newFollowers: v.new_followers != null ? Math.trunc(v.new_followers) : null,
       trafficSources: v.traffic_sources ?? null,
     })
+    if (v.retention_points && v.retention_points.length > 0) curves.push({ externalId: v.id, points: v.retention_points })
+    for (const c of v.comments_list ?? []) {
+      comments.push({
+        externalId: v.id,
+        commentId: c.id,
+        author: c.author ?? null,
+        text: c.text,
+        likeCount: Math.trunc(c.like_count ?? 0),
+        publishedAt: toIsoDate(c.published_at),
+      })
+    }
   }
 
-  return { videos, metrics, followers: payload.followers ?? null, errors: [] }
+  const a = payload.audience
+  return {
+    videos,
+    metrics,
+    followers: payload.followers ?? null,
+    errors: [],
+    curves,
+    comments,
+    audience: a
+      ? { ageGender: a.age_gender ?? null, countries: a.countries ?? null, cities: a.cities ?? null, onlineHours: a.online_hours ?? null }
+      : undefined,
+  }
 }

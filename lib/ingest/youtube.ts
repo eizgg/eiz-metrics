@@ -3,6 +3,7 @@
 import { emptyMetric } from './types.js'
 import type { FetchResult, NormalizedVideo } from './types.js'
 import { extractHashtags, parseISO8601Duration, toInt, truncate } from './text.js'
+import { fetchRetentionCurve, fetchTrafficSources, fetchVideoAnalytics, fetchYoutubeAudience } from './youtube-analytics.js'
 
 const YT_BASE = 'https://www.googleapis.com/youtube/v3'
 export const SHORT_MAX_SECONDS = 60 // mismo criterio que v1: <=60s = short
@@ -60,6 +61,8 @@ async function ytGet<T>(path: string, auth: string | YouTubeAuth): Promise<T> {
 export interface YouTubeCredentials extends YouTubeAuth {
   channelId: string
 }
+
+const CURVE_MAX_AGE_DAYS = 90 // las curvas se piden solo para videos con menos de 90 días
 
 export async function fetchYoutube(cred: YouTubeCredentials, maxVideos = 50): Promise<FetchResult> {
   const result: FetchResult = { videos: [], metrics: [], followers: null, errors: [] }
@@ -120,5 +123,51 @@ export async function fetchYoutube(cred: YouTubeCredentials, maxVideos = 50): Pr
     })
   }
 
+  // Analytics (solo con OAuth): retención, curva, suscriptores ganados, shares, tráfico y demografía
+  if (cred.bearer && result.videos.length > 0) {
+    await enrichWithAnalytics(cred.bearer, result)
+  }
+
   return result
+}
+
+async function enrichWithAnalytics(bearer: string, result: FetchResult): Promise<void> {
+  const published = result.videos.map((v) => v.publishedAt).filter((d): d is string => d !== null).sort()
+  const startDate = (published[0] ?? new Date().toISOString()).split('T')[0]
+  const metricById = new Map(result.metrics.map((m) => [m.externalId, m]))
+
+  try {
+    const analytics = await fetchVideoAnalytics(bearer, result.videos.map((v) => v.externalId), startDate)
+    for (const [id, a] of analytics) {
+      const m = metricById.get(id)
+      if (!m) continue
+      m.avgWatchTimeSeconds = a.avgViewDurationSeconds
+      m.retentionPct = a.avgViewPercentage !== null ? Math.round(a.avgViewPercentage * 100) / 100 : null
+      m.newFollowers = a.subscribersGained
+      if (a.shares !== null) m.shares = a.shares
+    }
+  } catch (err) {
+    result.errors.push(`YouTube Analytics: ${(err as Error).message}`)
+  }
+
+  result.curves = []
+  const recent = result.videos.filter((v) => v.publishedAt && Date.now() - Date.parse(v.publishedAt) < CURVE_MAX_AGE_DAYS * 86_400_000)
+  for (const v of recent) {
+    try {
+      const curve = await fetchRetentionCurve(bearer, v.externalId, startDate)
+      if (curve) result.curves.push(curve)
+      const traffic = await fetchTrafficSources(bearer, v.externalId, startDate)
+      const m = metricById.get(v.externalId)
+      if (m && traffic) m.trafficSources = traffic
+    } catch (err) {
+      result.errors.push(`Analytics ${v.externalId}: ${(err as Error).message}`)
+    }
+  }
+
+  try {
+    const audience = await fetchYoutubeAudience(bearer, startDate)
+    if (audience) result.audience = audience
+  } catch (err) {
+    result.errors.push(`Audiencia YouTube: ${(err as Error).message}`)
+  }
 }

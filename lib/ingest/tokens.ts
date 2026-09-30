@@ -1,7 +1,7 @@
 // Renovación de tokens: Instagram (long-lived de 60 días) y Google/YouTube (access token de 1h).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { GRAPH_API_VERSION } from './instagram.js'
+import { GRAPH_API_VERSION } from './constants.js'
 
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 const REFRESH_WINDOW_MS = 15 * 24 * 3_600_000 // renovar IG cuando faltan menos de 15 días

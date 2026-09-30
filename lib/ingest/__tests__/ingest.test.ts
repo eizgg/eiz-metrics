@@ -116,7 +116,7 @@ describe('fetchers con fetch mockeado', () => {
       [/m1\/insights\?metric=ig_reels_avg_watch_time/, { data: [{ name: 'ig_reels_avg_watch_time', values: [{ value: 7500 }] }] }],
       [/m1\/insights/, { data: [{ name: 'views', values: [{ value: 900 }] }, { name: 'saved', values: [{ value: 12 }] }, { name: 'reach', values: [{ value: 700 }] }] }],
     ])
-    const r = await fetchInstagram({ accessToken: 't', igUserId: 'ig1' })
+    const r = await fetchInstagram({ accessToken: 't', igUserId: 'ig1' }, { extras: false })
     expect(r.followers).toBe(4200)
     expect(r.videos).toHaveLength(1)
     expect(r.metrics[0]).toMatchObject({ externalId: 'R1', views: 900, saves: 12, reach: 700, avgWatchTimeSeconds: 7.5 })

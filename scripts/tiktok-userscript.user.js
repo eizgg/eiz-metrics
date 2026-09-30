@@ -44,6 +44,33 @@
     }
     GM_registerMenuCommand('EIZ Metrics: configurar', configurar);
 
+    // --- MODO DESCUBRIMIENTO ---
+    // Los endpoints de TikTok Studio para retención, audiencia y tráfico cambian y no están documentados.
+    // Con este modo activo, el script loguea en la consola la URL y la forma (claves) de cada respuesta
+    // JSON de analytics, para poder agregar los matchers y documentarlos en docs/tiktok-endpoints.md.
+    GM_registerMenuCommand('EIZ Metrics: alternar modo descubrimiento', function () {
+        const on = !GM_getValue('discovery', false);
+        GM_setValue('discovery', on);
+        window.alert('Modo descubrimiento ' + (on ? 'ACTIVADO' : 'desactivado') + '. Recargá la página.');
+    });
+
+    const DISCOVERY_RE = /analytics|insight|retention|audience|follower|traffic|creator/i;
+
+    function describirForma(valor, profundidad) {
+        if (profundidad > 3 || valor === null || typeof valor !== 'object') return typeof valor;
+        if (Array.isArray(valor)) return valor.length ? [describirForma(valor[0], profundidad + 1), 'x' + valor.length] : [];
+        const salida = {};
+        Object.keys(valor).slice(0, 25).forEach(function (k) { salida[k] = describirForma(valor[k], profundidad + 1); });
+        return salida;
+    }
+
+    function descubrir(url, texto) {
+        if (!GM_getValue('discovery', false) || typeof url !== 'string' || !DISCOVERY_RE.test(url)) return;
+        try {
+            console.log('🔎 [EIZ Metrics][descubrimiento]', url.split('?')[0], describirForma(JSON.parse(texto), 0));
+        } catch (e) { /* no era JSON */ }
+    }
+
     function getConfig() {
         return {
             endpoint: pedirConfig('endpoint', 'EIZ Metrics — URL del endpoint de subida:', DEFAULT_ENDPOINT),
@@ -140,6 +167,7 @@
         const url = args[0];
 
         if (typeof url === 'string') {
+            response.clone().text().then(function (t) { descubrir(url, t); }).catch(function () {});
             // Endpoints comunes de TikTok Creator Center
             if (url.includes('/api/creator/item/list') || 
                 url.includes('/analytics/post') || 
@@ -196,6 +224,7 @@
         this.addEventListener('load', function() {
             const url = this._url;
             if (typeof url === 'string') {
+                descubrir(url, this.responseText);
                 if (url.includes('/api/creator/item/list') || 
                     url.includes('/analytics/post') || 
                     url.includes('/creator-center/api/video/list') ||

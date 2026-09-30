@@ -10,17 +10,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import crypto from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '../../lib/ingest/sync.js'
-import { normalizeTikTok, tiktokUploadSchema, toIsoDate } from '../../lib/ingest/tiktok.js'
-import type { TikTokUploadPayload } from '../../lib/ingest/tiktok.js'
-import {
-  insertRetentionCurves,
-  isMissingSchema,
-  persistFetchResult,
-  upsertAudienceSnapshot,
-  upsertComments,
-  upsertVideos,
-} from '../../lib/ingest/persist.js'
-import type { CommentInput, RetentionCurveInput } from '../../lib/ingest/persist.js'
+import { normalizeTikTok, tiktokUploadSchema } from '../../lib/ingest/tiktok.js'
+import { isMissingSchema, persistFetchResult } from '../../lib/ingest/persist.js'
 import type { PlatformAccountRef } from '../../lib/ingest/types.js'
 
 export function hashToken(token: string): string {
@@ -73,27 +64,6 @@ async function authenticate(supabase: SupabaseClient, token: string): Promise<Pl
   return null
 }
 
-function extractExtras(payload: TikTokUploadPayload): { curves: RetentionCurveInput[]; comments: CommentInput[] } {
-  const curves: RetentionCurveInput[] = []
-  const comments: CommentInput[] = []
-  for (const v of payload.videos ?? []) {
-    if (v.retention_points && v.retention_points.length > 0) {
-      curves.push({ externalId: v.id, points: v.retention_points })
-    }
-    for (const c of v.comments_list ?? []) {
-      comments.push({
-        externalId: v.id,
-        commentId: c.id,
-        author: c.author ?? null,
-        text: c.text,
-        likeCount: Math.trunc(c.like_count ?? 0),
-        publishedAt: toIsoDate(c.published_at),
-      })
-    }
-  }
-  return { curves, comments }
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' })
@@ -116,26 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const normalized = normalizeTikTok(payload, ref.handle)
     const outcome = await persistFetchResult(supabase, ref, normalized)
-    const errors = [...outcome.errors]
-
-    // Extras de la Fase C: necesitan el mapa externalId → video_id
-    const { curves, comments } = extractExtras(payload)
-    if (curves.length > 0 || comments.length > 0) {
-      const { ids } = await upsertVideos(supabase, ref, normalized.videos)
-      const curveErr = await insertRetentionCurves(supabase, ids, curves)
-      if (curveErr) errors.push(curveErr)
-      const commentErr = await upsertComments(supabase, ids, comments)
-      if (commentErr) errors.push(commentErr)
-    }
-    if (payload.audience) {
-      const audienceErr = await upsertAudienceSnapshot(supabase, ref, {
-        ageGender: payload.audience.age_gender ?? null,
-        countries: payload.audience.countries ?? null,
-        cities: payload.audience.cities ?? null,
-        onlineHours: payload.audience.online_hours ?? null,
-      })
-      if (audienceErr) errors.push(audienceErr)
-    }
+    const errors = outcome.errors
 
     if (ref.id) {
       await supabase

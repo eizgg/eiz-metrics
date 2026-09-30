@@ -1,10 +1,12 @@
 // Fetcher de Instagram (Graph API). Sin Supabase adentro: devuelve datos normalizados.
 
+import { GRAPH_API_VERSION } from './constants.js'
 import { emptyMetric } from './types.js'
 import type { FetchResult, NormalizedMetric, NormalizedVideo } from './types.js'
 import { extractHashtags, truncate } from './text.js'
+import { fetchInstagramAudience, fetchInstagramComments, fetchInstagramDaily } from './instagram-extras.js'
 
-export const GRAPH_API_VERSION = 'v25.0'
+export { GRAPH_API_VERSION }
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 const REEL_METRICS = ['views', 'likes', 'comments', 'shares', 'saved', 'reach', 'total_interactions']
 // [VERIFICAR en v25.0] Si la métrica no existe para el media, se ignora sin romper el sync
@@ -57,8 +59,17 @@ export interface InstagramCredentials {
   igUserId: string
 }
 
-export async function fetchInstagram(cred: InstagramCredentials, limit = 50): Promise<FetchResult> {
-  const result: FetchResult = { videos: [], metrics: [], followers: null, errors: [] }
+export interface InstagramFetchOptions {
+  limit?: number
+  // Demografía, métricas diarias y comentarios (Fase C); 1 vez por día alcanza
+  extras?: boolean
+  commentsForRecent?: number
+}
+
+export async function fetchInstagram(cred: InstagramCredentials, options: InstagramFetchOptions = {}): Promise<FetchResult> {
+  const limit = options.limit ?? 50
+  const withExtras = options.extras ?? true
+  const result: FetchResult = { videos: [], metrics: [], followers: null, errors: [], comments: [] }
 
   try {
     const profile = await graphGet<{ followers_count: number }>(`${cred.igUserId}?fields=followers_count`, cred.accessToken)
@@ -115,8 +126,31 @@ export async function fetchInstagram(cred: InstagramCredentials, limit = 50): Pr
       result.errors.push(`Insights ${reel.id}: ${(err as Error).message}`)
     }
 
+    // Comentarios solo de los reels más recientes (acotan las llamadas)
+    if (withExtras && result.videos.length <= (options.commentsForRecent ?? 15)) {
+      try {
+        result.comments?.push(...(await fetchInstagramComments(reel.id, externalId, cred.accessToken)))
+      } catch (err) {
+        result.errors.push(`Comentarios ${reel.id}: ${(err as Error).message}`)
+      }
+    }
+
     // Respetar rate limit (200 calls/hora)
     await new Promise((r) => setTimeout(r, 300))
+  }
+
+  if (withExtras) {
+    try {
+      const audience = await fetchInstagramAudience(cred.igUserId, cred.accessToken)
+      if (audience) result.audience = audience
+    } catch (err) {
+      result.errors.push(`Audiencia IG: ${(err as Error).message}`)
+    }
+    try {
+      result.daily = await fetchInstagramDaily(cred.igUserId, cred.accessToken)
+    } catch (err) {
+      result.errors.push(`Métricas diarias IG: ${(err as Error).message}`)
+    }
   }
 
   return result

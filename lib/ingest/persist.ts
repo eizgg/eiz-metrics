@@ -3,7 +3,17 @@
 // Nunca pisa métricas: video_metrics es serie de tiempo (una fila nueva por fetch).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { FetchResult, IngestPlatform, NormalizedMetric, NormalizedVideo, PlatformAccountRef } from './types.js'
+import type {
+  AudienceInput,
+  CommentInput,
+  DailyMetricInput,
+  FetchResult,
+  IngestPlatform,
+  NormalizedMetric,
+  NormalizedVideo,
+  PlatformAccountRef,
+  RetentionCurveInput,
+} from './types.js'
 
 // Códigos de "tabla/columna inexistente": la migración de la fase todavía no se aplicó
 const MISSING_SCHEMA_CODES = new Set(['42P01', '42703', 'PGRST205', 'PGRST204'])
@@ -191,18 +201,37 @@ export async function persistFetchResult(
   const contentErr = await upsertContent(supabase, videosOut.ids, result.videos)
   if (contentErr) errors.push(contentErr)
 
+  // Extras de la Fase C
+  const extraErrs = await Promise.all([
+    result.curves?.length ? insertRetentionCurves(supabase, videosOut.ids, result.curves) : null,
+    result.comments?.length ? upsertComments(supabase, videosOut.ids, result.comments) : null,
+    result.audience ? upsertAudienceSnapshot(supabase, ref, result.audience) : null,
+    result.daily?.length ? upsertDailyMetrics(supabase, ref, result.daily) : null,
+  ])
+  for (const e of extraErrs) if (e) errors.push(e)
+
   return { insertedVideos: videosOut.inserted, insertedMetrics: metricsOut.inserted, errors }
 }
 
-export type { IngestPlatform }
+export async function upsertDailyMetrics(supabase: SupabaseClient, ref: PlatformAccountRef, daily: DailyMetricInput[]): Promise<string | null> {
+  if (!ref.id || daily.length === 0) return null
+  const rows = daily.map((d) => ({
+    platform_account_id: ref.id,
+    day: d.day,
+    reach: d.reach,
+    profile_views: d.profileViews,
+    accounts_engaged: d.accountsEngaged,
+    follows: d.follows,
+    unfollows: d.unfollows,
+  }))
+  const { error } = await supabase.from('account_daily_metrics').upsert(rows, { onConflict: 'platform_account_id,day' })
+  return error && !isMissingSchema(error) ? `Métricas diarias: ${error.message}` : null
+}
+
+export type { AudienceInput, CommentInput, DailyMetricInput, IngestPlatform, RetentionCurveInput }
 
 // --- Extras de la Fase C (curvas, comentarios, audiencia) ---
 // Todas son best-effort: si la tabla todavía no existe se ignoran sin ruido.
-
-export interface RetentionCurveInput {
-  externalId: string
-  points: Array<{ t: number; ratio: number }>
-}
 
 export async function insertRetentionCurves(
   supabase: SupabaseClient,
@@ -215,15 +244,6 @@ export async function insertRetentionCurves(
   if (rows.length === 0) return null
   const { error } = await supabase.from('video_retention_curves').insert(rows)
   return error && !isMissingSchema(error) ? `Curvas de retención: ${error.message}` : null
-}
-
-export interface CommentInput {
-  externalId: string // id del video
-  commentId: string
-  author: string | null
-  text: string
-  likeCount: number
-  publishedAt: string | null
 }
 
 export async function upsertComments(
@@ -244,13 +264,6 @@ export async function upsertComments(
   if (rows.length === 0) return null
   const { error } = await supabase.from('video_comments').upsert(rows, { onConflict: 'video_id,external_id' })
   return error && !isMissingSchema(error) ? `Comentarios: ${error.message}` : null
-}
-
-export interface AudienceInput {
-  ageGender: Record<string, Record<string, number>> | null
-  countries: Record<string, number> | null
-  cities: Record<string, number> | null
-  onlineHours: Record<string, number> | null
 }
 
 export async function upsertAudienceSnapshot(
