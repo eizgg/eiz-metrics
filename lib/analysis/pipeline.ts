@@ -8,6 +8,7 @@ import { runDiagnostics } from './diagnostics.js'
 import { computeAttributeLift } from './patterns.js'
 import { buildReportFacts, narrateReport } from './report.js'
 import { scoreVideos } from './scoring.js'
+import { enqueueUnanalyzed } from '../video-analysis/queue.js'
 import type { AnalysisPlatform, AnalysisVideo, ContentAttrs, MetricPoint, RetentionPoint } from './types.js'
 
 interface VideoRow { id: string; platform: AnalysisPlatform; title: string | null; duration_seconds: number | null; published_at: string | null }
@@ -78,11 +79,11 @@ export async function loadAnalysisVideos(supabase: SupabaseClient, accountId: st
   }))
 }
 
-export interface AnalysisOutcome { videos: number; scores: number; lifts: number; insights: number; alerts: number }
+export interface AnalysisOutcome { videos: number; scores: number; lifts: number; insights: number; alerts: number; queued: number }
 
 export async function runAccountAnalysis(supabase: SupabaseClient, accountId: string, now: Date = new Date()): Promise<AnalysisOutcome> {
   const videos = await loadAnalysisVideos(supabase, accountId)
-  if (videos.length === 0) return { videos: 0, scores: 0, lifts: 0, insights: 0, alerts: 0 }
+  if (videos.length === 0) return { videos: 0, scores: 0, lifts: 0, insights: 0, alerts: 0, queued: 0 }
 
   const scores = scoreVideos(videos, now)
   const { error: scoreErr } = await supabase.from('video_scores').upsert(
@@ -144,7 +145,10 @@ export async function runAccountAnalysis(supabase: SupabaseClient, accountId: st
     if (!error) insights++
   }
 
-  return { videos: videos.length, scores: scores.length, lifts: lifts.length, insights, alerts: alerts.length }
+  // Encola videos nuevos para el worker de análisis (best-effort: la tabla puede no existir todavía)
+  const queued = await enqueueUnanalyzed(supabase, accountId).then((q) => q.queued, () => 0)
+
+  return { videos: videos.length, scores: scores.length, lifts: lifts.length, insights, alerts: alerts.length, queued }
 }
 
 export async function runAllAccounts(supabase: SupabaseClient, now: Date = new Date()): Promise<Array<{ accountId: string } & AnalysisOutcome>> {

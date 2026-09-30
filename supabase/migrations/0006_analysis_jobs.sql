@@ -38,3 +38,21 @@ create or replace function public.claim_analysis_job() returns setof public.anal
   returning j.*;
 $$;
 revoke all on function public.claim_analysis_job() from public, anon, authenticated;
+
+-- El dueño puede encolar el análisis de sus propios videos (subida manual de TikTok)
+drop policy if exists analysis_jobs_insert_own on public.analysis_jobs;
+create policy analysis_jobs_insert_own on public.analysis_jobs for insert
+  with check (video_id is not null and public.owns_video(video_id));
+
+-- Storage: bucket privado para los archivos que sube el usuario (solo si existe el esquema storage)
+do $$
+begin
+  if exists (select 1 from information_schema.schemata where schema_name = 'storage') then
+    insert into storage.buckets (id, name, public) values ('video-inputs', 'video-inputs', false)
+    on conflict (id) do nothing;
+
+    drop policy if exists video_inputs_insert_own on storage.objects;
+    create policy video_inputs_insert_own on storage.objects for insert to authenticated
+      with check (bucket_id = 'video-inputs' and public.owns_video(((storage.foldername(name))[1])::uuid));
+  end if;
+end $$;

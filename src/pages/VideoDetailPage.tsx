@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useQueryClient } from '@tanstack/react-query'
+import { supabase } from '../lib/supabase'
 import { ChartTooltip } from '../components/ChartTooltip'
 import { RetentionChart } from '../components/RetentionChart'
 import { useBasePath } from '../components/Layout'
@@ -28,6 +29,8 @@ export function VideoDetailPage() {
   const { detail, loading: detailLoading } = useVideoDetail(id ?? null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null)
 
   if (videosLoading) return <span style={{ color: COLORS.dim, fontSize: 14 }}>Cargando…</span>
   if (!video) return <EmptyState title="No encontramos ese video" hint="Puede que se haya borrado o que sea de otra cuenta." />
@@ -44,6 +47,21 @@ export function VideoDetailPage() {
     if (err) setSaveError(err)
     await client.invalidateQueries({ queryKey: ['video-detail', id] })
     setSaving(false)
+  }
+
+  // Sube el archivo a Storage y encola el análisis (el worker lo toma de storage://)
+  async function uploadForAnalysis(videoId: string, file: File) {
+    setUploading(true)
+    setUploadMsg(null)
+    const objectPath = `${videoId}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
+    const up = await supabase.storage.from('video-inputs').upload(objectPath, file)
+    if (up.error) {
+      setUploadMsg(`No se pudo subir: ${up.error.message}`)
+    } else {
+      const job = await supabase.from('analysis_jobs').insert({ video_id: videoId, source_url: `storage://video-inputs/${objectPath}` })
+      setUploadMsg(job.error ? `Subido, pero no se pudo encolar: ${job.error.message}` : 'Listo: el análisis se procesa en segundos o minutos.')
+    }
+    setUploading(false)
   }
 
   const stats: Array<{ label: string; value: string }> = [
@@ -153,6 +171,24 @@ export function VideoDetailPage() {
           </div>
         )}
       </Card>
+
+      {video.platform === 'tiktok' && (!content || !content.analyzedAt) && id && (
+        <Card title="Analizar este video">
+          <div style={{ fontSize: 13, color: COLORS.muted, marginBottom: 10 }}>
+            TikTok no permite descargar el video automáticamente: subí el archivo (bajalo desde TikTok Studio) y el worker lo analiza.
+          </div>
+          <input
+            type="file"
+            accept="video/mp4,video/quicktime"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) void uploadForAnalysis(id, file)
+            }}
+          />
+          {uploadMsg && <div style={{ fontSize: 12, color: COLORS.muted, marginTop: 8 }}>{uploadMsg}</div>}
+        </Card>
+      )}
 
       {detail && detail.comments.length > 0 && (
         <Card title={`Comentarios destacados (${detail.comments.length})`}>
