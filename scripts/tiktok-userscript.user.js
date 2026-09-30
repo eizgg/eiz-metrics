@@ -1,13 +1,16 @@
 // ==UserScript==
 // @name         EIZ Metrics - TikTok Interceptor
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  Captura métricas de TikTok Creator Center en tiempo real y las envía al Dashboard de EIZ
 // @author       Antigravity AI
 // @match        *://creator.tiktok.com/*
 // @match        *://www.tiktok.com/creator-center*
 // @match        *://www.tiktok.com/tiktokstudio/*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @connect      localhost
 // @connect      eiz-metrics.vercel.app
 // @run-at       document-start
@@ -16,26 +19,58 @@
 (function() {
     'use strict';
 
-    // --- CONFIGURACIÓN DE TU DASHBOARD ---
-    // En desarrollo local puedes usar: 'http://localhost:5173/api/tiktok/upload'
-    // En producción usa la URL de tu Vercel: 'https://eiz-metrics.vercel.app/api/tiktok/upload'
-    const DASHBOARD_ENDPOINT = 'http://localhost:3000/api/tiktok/upload'; 
-    const UPLOAD_TOKEN = 'eiz_manual_metrics_upload_secret_token_2026'; // Debe coincidir con TIKTOK_MANUAL_UPLOAD_TOKEN en tu .env
+    // --- CONFIGURACIÓN ---
+    // Nada sensible vive en este archivo: el endpoint, el handle y el token de subida se
+    // piden una sola vez (prompt) y se guardan con GM_setValue en Tampermonkey.
+    // Podés cambiarlos desde el menú de Tampermonkey → "EIZ Metrics: configurar".
+    const DEFAULT_ENDPOINT = 'https://eiz-metrics.vercel.app/api/tiktok/upload';
+
+    function pedirConfig(clave, pregunta, valorPorDefecto) {
+        let valor = GM_getValue(clave, '');
+        if (!valor) {
+            valor = (window.prompt(pregunta, valorPorDefecto || '') || '').trim();
+            if (valor) GM_setValue(clave, valor);
+        }
+        return valor;
+    }
+
+    function configurar() {
+        GM_setValue('endpoint', '');
+        GM_setValue('handle', '');
+        GM_setValue('upload_token', '');
+        pedirConfig('endpoint', 'EIZ Metrics — URL del endpoint de subida:', DEFAULT_ENDPOINT);
+        pedirConfig('handle', 'EIZ Metrics — handle de TikTok (ej: eiz.gg):', '');
+        pedirConfig('upload_token', 'EIZ Metrics — token de subida (lo generás en la pantalla "Cuentas"):', '');
+    }
+    GM_registerMenuCommand('EIZ Metrics: configurar', configurar);
+
+    function getConfig() {
+        return {
+            endpoint: pedirConfig('endpoint', 'EIZ Metrics — URL del endpoint de subida:', DEFAULT_ENDPOINT),
+            handle: pedirConfig('handle', 'EIZ Metrics — handle de TikTok (ej: eiz.gg):', ''),
+            token: pedirConfig('upload_token', 'EIZ Metrics — token de subida (lo generás en la pantalla "Cuentas"):', '')
+        };
+    }
 
     console.log('🦁 [EIZ Metrics] Interceptor de red de TikTok activado. Esperando llamadas de datos...');
 
     // Helper para enviar los datos procesados al Dashboard
     function enviarAlDashboard(payload) {
+        const cfg = getConfig();
+        if (!cfg.endpoint || !cfg.token) {
+            console.warn('🦁 [EIZ Metrics] Falta configurar endpoint/token. Usá el menú de Tampermonkey.');
+            return;
+        }
         console.log('🦁 [EIZ Metrics] Enviando payload al Dashboard:', payload);
 
         GM_xmlhttpRequest({
             method: 'POST',
-            url: DASHBOARD_ENDPOINT,
+            url: cfg.endpoint,
             headers: {
                 'Content-Type': 'application/json',
-                'x-tiktok-upload-token': UPLOAD_TOKEN
+                'x-tiktok-upload-token': cfg.token
             },
-            data: JSON.stringify(payload),
+            data: JSON.stringify(Object.assign({ handle: cfg.handle || undefined }, payload)),
             onload: function(res) {
                 if (res.status === 200) {
                     console.log('🦁 [EIZ Metrics] ¡Métricas subidas con éxito!', res.responseText);
@@ -76,7 +111,7 @@
             return {
                 id: String(externalId),
                 title: item.desc || item.title || '',
-                url: `https://www.tiktok.com/@eiz.gg/video/${externalId}`,
+                url: `https://www.tiktok.com/@${(GM_getValue('handle', '') || '').replace(/^@/, '')}/video/${externalId}`,
                 duration: item.duration || null,
                 published_at: item.create_time ? item.create_time * 1000 : item.createTime || Date.now(),
                 views,

@@ -1,176 +1,157 @@
+/**
+ * Vercel Serverless Function — Recibe métricas de TikTok capturadas por el userscript.
+ *
+ * Auth: header `x-tiktok-upload-token`.
+ *  - Modo multi-cuenta: se hashea (sha256) y se busca en upload_tokens → platform_account.
+ *  - Modo legado: se compara contra TIKTOK_MANUAL_UPLOAD_TOKEN (comparación en tiempo constante).
+ */
+
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { createServiceClient } from '../../lib/ingest/sync.js'
+import { normalizeTikTok, tiktokUploadSchema, toIsoDate } from '../../lib/ingest/tiktok.js'
+import type { TikTokUploadPayload } from '../../lib/ingest/tiktok.js'
+import {
+  insertRetentionCurves,
+  isMissingSchema,
+  persistFetchResult,
+  upsertAudienceSnapshot,
+  upsertComments,
+  upsertVideos,
+} from '../../lib/ingest/persist.js'
+import type { CommentInput, RetentionCurveInput } from '../../lib/ingest/persist.js'
+import type { PlatformAccountRef } from '../../lib/ingest/types.js'
 
-// --- Tipos de Entrada ---
-
-interface TikTokVideoInput {
-  id: string
-  title?: string
-  url?: string
-  duration?: number
-  published_at?: string | number
-  views: number
-  likes: number
-  comments: number
-  shares: number
-  saves: number
-  retention_pct?: number | null
-  avg_watch_time_seconds?: number | null
+export function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex')
 }
 
-interface UploadRequestBody {
-  platform: string
-  followers?: number
-  videos?: TikTokVideoInput[]
+function safeEqual(a: string, b: string): boolean {
+  const ha = crypto.createHash('sha256').update(a).digest()
+  const hb = crypto.createHash('sha256').update(b).digest()
+  return crypto.timingSafeEqual(ha, hb)
 }
 
-// --- Helpers ---
+const LEGACY_HANDLE = 'eiz.gg'
 
-function getEnvOrThrow(name: string): string {
-  const val = process.env[name]
-  if (!val) throw new Error(`Variable de entorno ${name} no configurada`)
-  return val
+// Devuelve la cuenta asociada al token, o null si es inválido
+async function authenticate(supabase: SupabaseClient, token: string): Promise<PlatformAccountRef | null> {
+  const { data, error } = await supabase
+    .from('upload_tokens')
+    .select('id, platform_account_id, platform_accounts(handle, external_id, platform)')
+    .eq('token_hash', hashToken(token))
+    .is('revoked_at', null)
+    .maybeSingle()
+
+  if (!error && data) {
+    const row = data as unknown as {
+      id: string
+      platform_account_id: string
+      platform_accounts: { handle: string; external_id: string; platform: string } | null
+    }
+    if (row.platform_accounts?.platform === 'tiktok') {
+      await supabase.from('upload_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', row.id)
+      return {
+        id: row.platform_account_id,
+        platform: 'tiktok',
+        handle: row.platform_accounts.handle,
+        externalId: row.platform_accounts.external_id,
+        accessToken: null,
+        extra: {},
+      }
+    }
+  } else if (error && !isMissingSchema(error)) {
+    throw new Error(`Validando token: ${error.message}`)
+  }
+
+  // Modo legado (antes de la migración multi-cuenta)
+  const legacy = process.env.TIKTOK_MANUAL_UPLOAD_TOKEN
+  if (legacy && safeEqual(token, legacy)) {
+    return { id: null, platform: 'tiktok', handle: LEGACY_HANDLE, externalId: LEGACY_HANDLE, accessToken: null, extra: {} }
+  }
+  return null
 }
 
-// --- Handler ---
+function extractExtras(payload: TikTokUploadPayload): { curves: RetentionCurveInput[]; comments: CommentInput[] } {
+  const curves: RetentionCurveInput[] = []
+  const comments: CommentInput[] = []
+  for (const v of payload.videos ?? []) {
+    if (v.retention_points && v.retention_points.length > 0) {
+      curves.push({ externalId: v.id, points: v.retention_points })
+    }
+    for (const c of v.comments_list ?? []) {
+      comments.push({
+        externalId: v.id,
+        commentId: c.id,
+        author: c.author ?? null,
+        text: c.text,
+        likeCount: Math.trunc(c.like_count ?? 0),
+        publishedAt: toIsoDate(c.published_at),
+      })
+    }
+  }
+  return { curves, comments }
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Solo permitir POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' })
   }
 
   try {
-    const supabaseUrl = getEnvOrThrow('VITE_SUPABASE_URL')
-    const supabaseServiceKey = getEnvOrThrow('SUPABASE_SERVICE_ROLE_KEY')
-    const manualUploadToken = getEnvOrThrow('TIKTOK_MANUAL_UPLOAD_TOKEN')
-
-    // 1. Validar autenticación
     const tokenHeader = req.headers['x-tiktok-upload-token']
-    if (!tokenHeader || tokenHeader !== manualUploadToken) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid upload token' })
+    const token = Array.isArray(tokenHeader) ? tokenHeader[0] : tokenHeader
+    if (!token) return res.status(401).json({ error: 'Unauthorized: falta el token de subida' })
+
+    const supabase = createServiceClient()
+    const ref = await authenticate(supabase, token)
+    if (!ref) return res.status(401).json({ error: 'Unauthorized: token de subida inválido' })
+
+    const parsed = tiktokUploadSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Bad Request', issues: parsed.error.issues.slice(0, 10) })
+    }
+    const payload = parsed.data
+
+    const normalized = normalizeTikTok(payload, ref.handle)
+    const outcome = await persistFetchResult(supabase, ref, normalized)
+    const errors = [...outcome.errors]
+
+    // Extras de la Fase C: necesitan el mapa externalId → video_id
+    const { curves, comments } = extractExtras(payload)
+    if (curves.length > 0 || comments.length > 0) {
+      const { ids } = await upsertVideos(supabase, ref, normalized.videos)
+      const curveErr = await insertRetentionCurves(supabase, ids, curves)
+      if (curveErr) errors.push(curveErr)
+      const commentErr = await upsertComments(supabase, ids, comments)
+      if (commentErr) errors.push(commentErr)
+    }
+    if (payload.audience) {
+      const audienceErr = await upsertAudienceSnapshot(supabase, ref, {
+        ageGender: payload.audience.age_gender ?? null,
+        countries: payload.audience.countries ?? null,
+        cities: payload.audience.cities ?? null,
+        onlineHours: payload.audience.online_hours ?? null,
+      })
+      if (audienceErr) errors.push(audienceErr)
     }
 
-    const { platform, followers, videos } = req.body as UploadRequestBody
-
-    if (platform !== 'tiktok') {
-      return res.status(400).json({ error: 'Bad Request: Only platform "tiktok" is supported' })
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    let processedFollowers = false
-    let insertedVideos = 0
-    let insertedMetrics = 0
-    const errors: string[] = []
-
-    // 2. Guardar seguidores
-    if (typeof followers === 'number' && followers >= 0) {
-      const todayDate = new Date().toISOString().split('T')[0]
-      const { error: followerErr } = await supabase.from('follower_counts').upsert(
-        {
-          id: crypto.randomUUID(),
-          platform: 'tiktok',
-          count: followers,
-          recorded_at: todayDate,
-        },
-        { onConflict: 'platform,recorded_at' }
-      )
-
-      if (followerErr) {
-        errors.push(`Followers error: ${followerErr.message}`)
-      } else {
-        processedFollowers = true
-      }
-    }
-
-    // 3. Guardar videos y métricas
-    if (videos && Array.isArray(videos)) {
-      for (const video of videos) {
-        const externalId = video.id
-
-        if (!externalId) {
-          errors.push('Ignorando video sin ID externo')
-          continue
-        }
-
-        // Buscar si existe el video
-        const { data: existingVideo } = await supabase
-          .from('videos')
-          .select('id')
-          .eq('platform', 'tiktok')
-          .eq('external_id', externalId)
-          .maybeSingle()
-
-        let videoId: string
-
-        if (existingVideo) {
-          videoId = existingVideo.id
-        } else {
-          // Crear un video nuevo si no existía
-          videoId = crypto.randomUUID()
-          
-          let publishedAtStr: string
-          if (video.published_at) {
-            if (typeof video.published_at === 'number') {
-              publishedAtStr = new Date(video.published_at).toISOString()
-            } else {
-              publishedAtStr = new Date(video.published_at).toISOString()
-            }
-          } else {
-            publishedAtStr = new Date().toISOString()
-          }
-
-          const { error: videoErr } = await supabase.from('videos').insert({
-            id: videoId,
-            platform: 'tiktok',
-            external_id: externalId,
-            title: video.title?.substring(0, 200) ?? 'TikTok Video',
-            url: video.url ?? `https://www.tiktok.com/@eiz.gg/video/${externalId}`,
-            duration_seconds: video.duration ?? null,
-            published_at: publishedAtStr,
-          })
-
-          if (videoErr) {
-            errors.push(`Video ${externalId}: ${videoErr.message}`)
-            continue
-          }
-          insertedVideos++
-        }
-
-        // Insertar métricas en la serie temporal
-        const { error: metricErr } = await supabase.from('video_metrics').insert({
-          id: crypto.randomUUID(),
-          video_id: videoId,
-          views: video.views ?? 0,
-          likes: video.likes ?? 0,
-          comments: video.comments ?? 0,
-          shares: video.shares ?? 0,
-          saves: video.saves ?? 0,
-          retention_pct: typeof video.retention_pct === 'number' ? video.retention_pct : null,
-          avg_watch_time_seconds: typeof video.avg_watch_time_seconds === 'number' ? video.avg_watch_time_seconds : null,
-        })
-
-        if (metricErr) {
-          errors.push(`Metrics ${externalId}: ${metricErr.message}`)
-        } else {
-          insertedMetrics++
-        }
-      }
+    if (ref.id) {
+      await supabase
+        .from('platform_accounts')
+        .update({ last_synced_at: new Date().toISOString(), last_error: null })
+        .eq('id', ref.id)
     }
 
     return res.status(200).json({
       ok: true,
-      processedFollowers,
-      insertedVideos,
-      insertedMetrics,
+      processedFollowers: normalized.followers !== null,
+      insertedVideos: outcome.insertedVideos,
+      insertedMetrics: outcome.insertedMetrics,
       errors: errors.length > 0 ? errors : undefined,
     })
-
   } catch (err) {
-    return res.status(500).json({
-      ok: false,
-      error: (err as Error).message,
-    })
+    return res.status(500).json({ ok: false, error: (err as Error).message })
   }
 }
