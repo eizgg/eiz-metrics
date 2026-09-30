@@ -1,13 +1,26 @@
 {
   "rewrites": [
-    { "source": "/terms", "destination": "/terms.html" },
-    { "source": "/privacy", "destination": "/privacy.html" },
-    { "source": "/((?!api/|assets/|.*\\..*).*)", "destination": "/index.html" }
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/((?!api/|assets/|.*\\..*).*)",
+      "destination": "/index.html"
+    }
   ],
   "crons": [
     {
       "path": "/api/cron/sync",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/analyze",
+      "schedule": "30 4 * * *"
     }
   ]
 }
