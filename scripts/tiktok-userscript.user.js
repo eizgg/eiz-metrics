@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         EIZ Metrics - TikTok Interceptor
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Captura métricas de TikTok Creator Center en tiempo real y las envía al Dashboard de EIZ
 // @author       Antigravity AI
 // @match        *://creator.tiktok.com/*
@@ -197,8 +197,8 @@
                 id: String(externalId),
                 title: item.desc || item.title || item.description || '',
                 url: 'https://www.tiktok.com/@' + handle + '/video/' + externalId,
-                // la duración viene en segundos (si viniera en ms se corrige acá)
-                duration: duracion ? (duracion > 10000 ? Math.round(duracion / 1000) : Math.round(duracion)) : null,
+                // item_list/v1 manda la duración en milisegundos (50034 = 00:50)
+                duration: duracion ? Math.round(duracion / 1000) : null,
                 // create_time viene en segundos
                 published_at: creado ? (creado < 1e12 ? creado * 1000 : creado) : Date.now(),
                 views: views,
