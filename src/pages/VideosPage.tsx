@@ -11,7 +11,7 @@ import type { PlatformFilter as PlatformFilterType, SortKey } from '../types'
 export function VideosPage() {
   const base = useBasePath()
   const { videos, loading, isDemo } = useDashboardVideos()
-  const { data: scores } = useVideoScores()
+  const { data: allScores } = useVideoScores()
   const [filter, setFilter] = useState<PlatformFilterType>('all')
   const [sortKey, setSortKey] = useState<SortKey>('views')
 
@@ -26,6 +26,11 @@ export function VideosPage() {
     }),
     [videos]
   )
+  // video_scores no tiene filtro por cuenta: nos quedamos con los de los videos que se muestran
+  const scores = useMemo(() => {
+    const ids = new Set(videos.map((v) => v.id))
+    return allScores.filter((s) => ids.has(s.videoId))
+  }, [allScores, videos])
   const exploded = scores.filter((s) => s.classification === 'exploto').length
   const below = scores.filter((s) => s.classification === 'abajo').length
 
