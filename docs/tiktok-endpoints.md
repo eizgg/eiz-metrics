@@ -8,8 +8,8 @@ existe para poder arreglarlo rápido cuando se rompa.
 
 | Dato | Estado | Matcher en el userscript |
 |------|--------|--------------------------|
-| Lista de videos + stats básicas (views, likes, comments, shares, saves) | Implementado (heredado de v1.1) | `/api/creator/item/list`, `/analytics/post`, `/creator-center/api/video/list`, `/share/analytics/item_list` |
-| Seguidores | Implementado | `/api/creator/user/info`, `/creator-center/api/user/stats` |
+| Lista de videos + stats básicas (views, likes, comments, shares, saves, duración, fecha) | **Implementado y verificado** (oct 2026) | `/tiktok/creator/manage/item_list/v1` (+ los viejos como fallback) |
+| Seguidores | **Implementado y verificado** (oct 2026) | `/tiktokstudio/api/web/relation/multiGetFollowRelationCount` |
 | Curva de retención por video | **Pendiente de descubrir** | — |
 | % que vio el video completo, tiempo promedio, seguidores nuevos | **Pendiente de descubrir** | — |
 | Fuentes de tráfico (Para ti, perfil, búsqueda, sonido) | **Pendiente de descubrir** | — |
@@ -28,4 +28,18 @@ existe para poder arreglarlo rápido cuando se rompa.
 
 ## Endpoints encontrados
 
-_(completar al descubrirlos: URL, método, forma del JSON, fecha, cómo mapea al payload)_
+Capturados con el modo descubrimiento el 2026-10-07 (TikTok Studio web).
+
+| Endpoint | Forma de la respuesta | Uso |
+|----------|----------------------|-----|
+| `/tiktok/creator/manage/item_list/v1/` | `{ item_list: [...], cursor, has_more, ... }`. Cada item es **plano**: `item_id`, `desc`, `create_time` (segundos), `duration` (**milisegundos**), `like_count`, `comment_count`, `favorite_count` (saves), `is_pinned`, etc. | Lista de videos. Pagina por scroll en Content: el script sube cada página |
+| `/tiktokstudio/api/web/relation/multiGetFollowRelationCount` | `{ FollowerCount: { "<uid>": "15054" }, FollowingCount, FriendCount, BaseResp }`. **Los contadores son strings** y van en un mapa por uid | Seguidores |
+| `/aweme/v2/data/insight/` | `{ comment_history, follower_active_history_days, follower_active_history_hours, follower_num_history, ... }` | Pendiente de mapear: historial de seguidores y horas activas (audiencia) |
+| `/tiktok/v1/analytics/insights/` | `{ article_links_ctr, ... }` | Pendiente de revisar |
+| `/tiktok/v1/creator/m10n_center/reward_analytics` | monetización | No se usa |
+
+Notas:
+
+- El script usa `unsafeWindow`: con `@grant GM_*` Tampermonkey corre en un sandbox y parchear `window.fetch` no afectaba la página.
+- La config (endpoint, handle, token) se guarda con `GM_setValue`; reemplazar el script puede borrarla y volver a pedirla.
+- El primer item crudo se loguea una vez por página (`Primer item crudo`) para ajustar el mapeo si TikTok renombra campos.
