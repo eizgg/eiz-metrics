@@ -4,6 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { firstEmbedded } from './embed.js'
 import { fetchInstagram } from './instagram.js'
 import { fetchYoutube } from './youtube.js'
 import { isMissingSchema, persistFetchResult } from './persist.js'
@@ -27,7 +28,13 @@ interface PlatformAccountRow {
   platform: IngestPlatform
   handle: string
   external_id: string
-  platform_credentials: Array<{ access_token: string; extra: Record<string, string> | null }> | null
+  // Relación 1 a 1: PostgREST la devuelve como objeto (los mocks de test la pasan como array)
+  platform_credentials: CredentialRow | CredentialRow[] | null
+}
+
+interface CredentialRow {
+  access_token: string
+  extra: Record<string, string> | null
 }
 
 // Cuentas activas de la tabla platform_accounts (TikTok no se sincroniza: llega por userscript)
@@ -35,7 +42,8 @@ async function loadFromDatabase(supabase: SupabaseClient, only?: IngestPlatform)
   let query = supabase
     .from('platform_accounts')
     .select('id, platform, handle, external_id, platform_credentials(access_token, extra)')
-    .eq('status', 'active')
+    // Las cuentas en 'error' se reintentan: markAccount las vuelve a 'active' cuando el sync funciona
+    .in('status', ['active', 'error'])
     .in('platform', ['instagram', 'youtube'])
   if (only) query = query.eq('platform', only)
 
@@ -44,7 +52,7 @@ async function loadFromDatabase(supabase: SupabaseClient, only?: IngestPlatform)
   if (error) throw new Error(`Leyendo platform_accounts: ${error.message}`)
 
   return ((data ?? []) as unknown as PlatformAccountRow[]).map((row) => {
-    const cred = row.platform_credentials?.[0]
+    const cred = firstEmbedded(row.platform_credentials)
     return {
       id: row.id,
       platform: row.platform,
@@ -97,7 +105,7 @@ export async function resolveAccountById(supabase: SupabaseClient, platformAccou
     .maybeSingle()
   if (error || !data) return null
   const row = data as unknown as PlatformAccountRow
-  const cred = row.platform_credentials?.[0]
+  const cred = firstEmbedded(row.platform_credentials)
   return {
     id: row.id,
     platform: row.platform,
