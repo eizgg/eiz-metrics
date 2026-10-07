@@ -2,6 +2,7 @@
 // El LLM propone; el código valida (dont_list, audio propio, evidencia, capacidad) y estima el índice.
 
 import { z } from 'zod'
+import { effortConfig } from '../anthropic-model.js'
 import type { AttributeLift } from '../analysis/patterns.js'
 import { ATTRIBUTE_LABELS, topPatterns, weakPatterns } from '../analysis/patterns.js'
 import { predictIndex } from './predict.js'
@@ -27,14 +28,15 @@ interface ToolResponse {
 async function callTool<T extends z.ZodType>(system: string, user: string, toolName: string, schema: T, options: { apiKey?: string; model?: string }): Promise<z.infer<T>> {
   const apiKey = options.apiKey ?? process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY no configurada')
+  const model = options.model ?? process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5'
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: options.model ?? process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5',
+      model,
       // El razonamiento adaptativo también consume max_tokens: se deja margen para que no corte el JSON
       max_tokens: 16000,
-      output_config: { effort: 'medium' },
+      ...effortConfig(model),
       // Sonnet 5.5 rechaza tool_choice "tool"/"any" (400): se usa "auto" y se pide la herramienta por nombre
       system: `${system}\n\nEntregá el resultado SOLO llamando a la herramienta "${toolName}". No respondas con texto.`,
       tools: [{ name: toolName, description: 'Devuelve el resultado estructurado', input_schema: z.toJSONSchema(schema) }],

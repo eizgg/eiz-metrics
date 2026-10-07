@@ -56,7 +56,7 @@ Otras decisiones tomadas por su cuenta:
 2. Aplicar `supabase/migrations/0001` y `0002` (SQL Editor, en orden).
 3. `npx tsx scripts/seed-eiz-account.ts --email tu@mail.com` (crea el account EIZ, mueve credenciales del `.env`, hace
    backfill y **imprime un token de subida de TikTok una sola vez**).
-4. Aplicar `0003` (falla a propósito si quedan filas sin `platform_account_id`), luego `0004`–`0008`.
+4. Aplicar `0003` (falla a propósito si quedan filas sin `platform_account_id`), luego `0004`–`0009`.
 5. Verificar en la base real el `check` de `videos.platform` (¿alguna vez se amplió para `youtube_shorts`?). La 0001 lo
    reemplaza igual.
 6. La rama `storage` de la 0006 (bucket `video-inputs` + policy) no se pudo probar en PGlite (no tiene el esquema

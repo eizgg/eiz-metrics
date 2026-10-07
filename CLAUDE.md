@@ -72,6 +72,7 @@ create table public.follower_counts (
 | 0006 | Fase E: `analysis_jobs` + `claim_analysis_job()` (cola atómica), bucket de Storage `video-inputs` |
 | 0007 | Fase F: `competitors`, `competitor_snapshots`, `reference_videos` |
 | 0008 | Fase G: `account_profiles` (sembrado con el perfil de EIZ), `content_ideas`, `content_scripts`, `content_calendar` |
+| 0009 | `claim_analysis_job()` recupera jobs `running` abandonados (>30 min): reencola o falla tras 3 intentos |
 
 Reglas: todo INSERT de ingesta y análisis va con `service_role`; el front solo lee (y edita `video_content`, `insights`, ideas, competidores propios). El código funciona también **antes** de aplicar las migraciones (modo legado: env vars, sin filtro por cuenta, tablas faltantes se ignoran).
 
