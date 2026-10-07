@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         EIZ Metrics - TikTok Interceptor
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.7
 // @description  Captura métricas de TikTok Creator Center en tiempo real y las envía al Dashboard de EIZ
 // @author       Antigravity AI
 // @match        *://creator.tiktok.com/*
@@ -11,11 +11,13 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
 // @connect      localhost
 // @connect      eiz-metrics.vercel.app
 // @run-at       document-start
 // ==/UserScript==
 
+/* global unsafeWindow */
 (function() {
     'use strict';
 
@@ -111,23 +113,75 @@
         });
     }
 
+    // --- ENDPOINTS DE TIKTOK STUDIO (descubiertos con el modo descubrimiento, oct 2026) ---
+    // Ver docs/tiktok-endpoints.md. Si TikTok los cambia, reactivar el modo descubrimiento.
+    const RE_LISTA_VIDEOS = /\/tiktok\/creator\/manage\/item_list\/v1|\/api\/creator\/item\/list|\/analytics\/post|\/creator-center\/api\/video\/list|\/share\/analytics\/item_list/;
+    const RE_SEGUIDORES = /\/relation\/multiGetFollowRelationCount|\/api\/creator\/user\/info|\/creator-center\/api\/user\/stats/;
+
+    function primerNumero(valor) {
+        if (typeof valor === 'number') return valor;
+        // TikTok suele devolver los contadores como string ("3170")
+        if (typeof valor === 'string' && /^[0-9]+$/.test(valor)) return Number(valor);
+        if (valor && typeof valor === 'object') {
+            const claves = Object.keys(valor);
+            for (let i = 0; i < claves.length; i++) {
+                const n = primerNumero(valor[claves[i]]);
+                if (typeof n === 'number') return n;
+            }
+        }
+        return undefined;
+    }
+
+    // Primer valor numérico (o string numérico) entre varias claves candidatas
+    function pick() {
+        for (let i = 0; i < arguments.length; i++) {
+            const v = arguments[i];
+            if (v !== undefined && v !== null && v !== '' && !isNaN(Number(v))) return Number(v);
+        }
+        return 0;
+    }
+
+    // La lista puede venir bajo distintas claves; si no está en las conocidas, se busca el primer array de objetos con id
+    function buscarLista(data) {
+        const raiz = (data && data.data) || data || {};
+        const conocidas = ['item_list', 'items', 'videos', 'itemList', 'list'];
+        for (let i = 0; i < conocidas.length; i++) {
+            if (Array.isArray(raiz[conocidas[i]])) return raiz[conocidas[i]];
+            if (data && Array.isArray(data[conocidas[i]])) return data[conocidas[i]];
+        }
+        const claves = Object.keys(raiz);
+        for (let j = 0; j < claves.length; j++) {
+            const v = raiz[claves[j]];
+            if (Array.isArray(v) && v.length && typeof v[0] === 'object' && (v[0].item_id || v[0].id || v[0].itemId)) return v;
+        }
+        return [];
+    }
+
+    let yaLogueoItem = false;
+
     // Helper para procesar listas de videos interceptados
     function procesarVideos(itemList) {
         if (!itemList || !Array.isArray(itemList) || itemList.length === 0) return;
 
-        const videos = itemList.map(item => {
-            const externalId = item.item_id || item.id || item.itemId;
+        // Una vez por página: el primer item crudo, para poder ajustar el mapeo si TikTok cambia los nombres
+        if (!yaLogueoItem) {
+            yaLogueoItem = true;
+            try { console.log('🦁 [EIZ Metrics] Primer item crudo:', JSON.stringify(itemList[0]).slice(0, 2500)); } catch (e) { /* nada */ }
+        }
+
+        const videos = itemList.map(function (item) {
+            const externalId = item.item_id || item.id || item.itemId || item.aweme_id;
             if (!externalId) return null;
 
-            // Extraer estadísticas básicas
-            const stats = item.statistics || item.stats || {};
-            const views = parseInt(stats.play_count || stats.playCount || item.play_count || item.playCount || 0);
-            const likes = parseInt(stats.digg_count || stats.diggCount || item.like_count || item.likeCount || 0);
-            const comments = parseInt(stats.comment_count || stats.commentCount || item.comment_count || item.commentCount || 0);
-            const shares = parseInt(stats.share_count || stats.shareCount || item.share_count || item.shareCount || 0);
-            const saves = parseInt(stats.collect_count || stats.collectCount || item.collect_count || item.collectCount || 0);
+            // Las stats pueden venir anidadas (statistics / stats / item_stats) o planas en el item
+            const stats = item.statistics || item.stats || item.item_stats || item.metrics || {};
+            const views = pick(stats.play_count, stats.playCount, stats.view_count, stats.views, item.play_count, item.playCount, item.view_count, item.views);
+            const likes = pick(stats.digg_count, stats.diggCount, stats.like_count, stats.likes, item.digg_count, item.like_count, item.likeCount, item.likes);
+            const comments = pick(stats.comment_count, stats.commentCount, stats.comments, item.comment_count, item.commentCount, item.comments);
+            const shares = pick(stats.share_count, stats.shareCount, stats.shares, item.share_count, item.shareCount, item.shares);
+            const saves = pick(stats.collect_count, stats.collectCount, stats.favorite_count, stats.saves, item.collect_count, item.collectCount, item.favorite_count);
 
-            // Intentar extraer retención si está disponible en la respuesta (varía según la pestaña en la que esté el usuario)
+            // Intentar extraer retención si está disponible en la respuesta
             let retention_pct = null;
             let avg_watch_time_seconds = null;
             if (item.analytics) {
@@ -135,129 +189,98 @@
                 avg_watch_time_seconds = typeof item.analytics.average_watch_time === 'number' ? item.analytics.average_watch_time : null;
             }
 
+            const creado = pick(item.create_time, item.createTime, item.create_timestamp);
+            const duracion = pick(item.duration, item.video_duration, item.video && item.video.duration);
+            const handle = (GM_getValue('handle', '') || '').replace(/^@/, '');
+
             return {
                 id: String(externalId),
-                title: item.desc || item.title || '',
-                url: `https://www.tiktok.com/@${(GM_getValue('handle', '') || '').replace(/^@/, '')}/video/${externalId}`,
-                duration: item.duration || null,
-                published_at: item.create_time ? item.create_time * 1000 : item.createTime || Date.now(),
-                views,
-                likes,
-                comments,
-                shares,
-                saves,
-                retention_pct,
-                avg_watch_time_seconds
+                title: item.desc || item.title || item.description || '',
+                url: 'https://www.tiktok.com/@' + handle + '/video/' + externalId,
+                // item_list/v1 manda la duración en milisegundos (50034 = 00:50)
+                duration: duracion ? Math.round(duracion / 1000) : null,
+                // create_time viene en segundos
+                published_at: creado ? (creado < 1e12 ? creado * 1000 : creado) : Date.now(),
+                views: views,
+                likes: likes,
+                comments: comments,
+                shares: shares,
+                saves: saves,
+                retention_pct: retention_pct,
+                avg_watch_time_seconds: avg_watch_time_seconds
             };
-        }).filter(v => v !== null);
+        }).filter(function (v) { return v !== null; });
 
         if (videos.length > 0) {
-            console.log(`🦁 [EIZ Metrics] Se encontraron ${videos.length} videos listos para enviar.`);
-            enviarAlDashboard({
-                platform: 'tiktok',
-                videos
-            });
+            console.log('🦁 [EIZ Metrics] Se encontraron ' + videos.length + ' videos listos para enviar.');
+            enviarAlDashboard({ platform: 'tiktok', videos: videos });
         }
     }
 
-    // Interceptar llamadas a través de window.fetch
-    const originalFetch = window.fetch;
-    window.fetch = async function(...args) {
-        const response = await originalFetch(...args);
-        const url = args[0];
-
-        if (typeof url === 'string') {
-            response.clone().text().then(function (t) { descubrir(url, t); }).catch(function () {});
-            // Endpoints comunes de TikTok Creator Center
-            if (url.includes('/api/creator/item/list') || 
-                url.includes('/analytics/post') || 
-                url.includes('/creator-center/api/video/list') ||
-                url.includes('/share/analytics/item_list')) {
-                
-                try {
-                    const clone = response.clone();
-                    const data = await clone.json();
-                    console.log('🦁 [EIZ Metrics] Petición FETCH de videos capturada:', url);
-                    
-                    const itemList = data?.data?.item_list || data?.item_list || data?.data?.videos || data?.videos || [];
-                    procesarVideos(itemList);
-                } catch (e) {
-                    console.warn('🦁 [EIZ Metrics] Error al procesar respuesta FETCH de videos:', e);
-                }
-            }
-
-            // Capturar seguidores de info de perfil
-            if (url.includes('/api/creator/user/info') || url.includes('/creator-center/api/user/stats')) {
-                try {
-                    const clone = response.clone();
-                    const data = await clone.json();
-                    console.log('🦁 [EIZ Metrics] Petición FETCH de usuario capturada:', url);
-                    
-                    const stats = data?.data?.user_stats || data?.user_stats || data?.data || {};
-                    const followers = stats.follower_count || stats.followerCount || stats.followers;
-                    if (typeof followers === 'number') {
-                        console.log(`🦁 [EIZ Metrics] Seguidores detectados: ${followers}`);
-                        enviarAlDashboard({
-                            platform: 'tiktok',
-                            followers
-                        });
-                    }
-                } catch (e) {
-                    console.warn('🦁 [EIZ Metrics] Error al procesar respuesta FETCH de usuario:', e);
-                }
-            }
+    function procesarSeguidores(data) {
+        // multiGetFollowRelationCount devuelve { FollowerCount: { <uid>: n }, ... }; los endpoints viejos, un número plano
+        const stats = (data && data.data && (data.data.user_stats || data.data)) || (data && data.user_stats) || data || {};
+        const candidato = stats.FollowerCount !== undefined ? stats.FollowerCount
+            : stats.follower_count !== undefined ? stats.follower_count
+            : stats.followerCount !== undefined ? stats.followerCount
+            : stats.followers;
+        const followers = primerNumero(candidato);
+        if (typeof followers === 'number' && followers >= 0) {
+            console.log('🦁 [EIZ Metrics] Seguidores detectados: ' + followers);
+            enviarAlDashboard({ platform: 'tiktok', followers: Math.round(followers) });
+        } else {
+            try { console.warn('🦁 [EIZ Metrics] No pude leer los seguidores. FollowerCount crudo:', JSON.stringify(candidato).slice(0, 500)); } catch (e) { /* nada */ }
         }
+    }
 
+    // Procesa una respuesta ya leída (la comparten fetch y XHR)
+    function procesarRespuesta(url, texto, origen) {
+        if (typeof url !== 'string') return;
+        descubrir(url, texto);
+        const esLista = RE_LISTA_VIDEOS.test(url);
+        const esSeguidores = RE_SEGUIDORES.test(url);
+        if (!esLista && !esSeguidores) return;
+        try {
+            const data = JSON.parse(texto);
+            if (esLista) {
+                console.log('🦁 [EIZ Metrics] Petición ' + origen + ' de videos capturada:', url.split('?')[0]);
+                procesarVideos(buscarLista(data));
+            }
+            if (esSeguidores) {
+                console.log('🦁 [EIZ Metrics] Petición ' + origen + ' de usuario capturada:', url.split('?')[0]);
+                procesarSeguidores(data);
+            }
+        } catch (e) {
+            console.warn('🦁 [EIZ Metrics] Error al procesar respuesta ' + origen + ':', e);
+        }
+    }
+
+    // Con @grant el script corre en un sandbox: hay que parchear el fetch/XHR REAL de la página (unsafeWindow)
+    const pagina = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+
+    // Interceptar llamadas a través de fetch
+    const originalFetch = pagina.fetch.bind(pagina);
+    pagina.fetch = async function (...args) {
+        const response = await originalFetch(...args);
+        // fetch puede recibir un string, un URL o un Request
+        const primero = args[0];
+        const url = typeof primero === 'string' ? primero : (primero && (primero.url || String(primero))) || '';
+        response.clone().text().then(function (t) { procesarRespuesta(url, t, 'FETCH'); }).catch(function () { /* respuesta no legible */ });
         return response;
     };
 
     // Interceptar llamadas a través de XMLHttpRequest
-    const originalOpen = XMLHttpRequest.prototype.open;
-    const originalSend = XMLHttpRequest.prototype.send;
+    const originalOpen = pagina.XMLHttpRequest.prototype.open;
+    const originalSend = pagina.XMLHttpRequest.prototype.send;
 
-    XMLHttpRequest.prototype.open = function(method, url) {
-        this._url = url;
+    pagina.XMLHttpRequest.prototype.open = function (method, url) {
+        this._url = String(url);
         return originalOpen.apply(this, arguments);
     };
 
-    XMLHttpRequest.prototype.send = function() {
-        this.addEventListener('load', function() {
-            const url = this._url;
-            if (typeof url === 'string') {
-                descubrir(url, this.responseText);
-                if (url.includes('/api/creator/item/list') || 
-                    url.includes('/analytics/post') || 
-                    url.includes('/creator-center/api/video/list') ||
-                    url.includes('/share/analytics/item_list')) {
-                    
-                    try {
-                        const data = JSON.parse(this.responseText);
-                        console.log('🦁 [EIZ Metrics] Petición XHR de videos capturada:', url);
-                        const itemList = data?.data?.item_list || data?.item_list || data?.data?.videos || data?.videos || [];
-                        procesarVideos(itemList);
-                    } catch (e) {
-                        // Respuesta no es JSON o formato inválido
-                    }
-                }
-
-                if (url.includes('/api/creator/user/info') || url.includes('/creator-center/api/user/stats')) {
-                    try {
-                        const data = JSON.parse(this.responseText);
-                        console.log('🦁 [EIZ Metrics] Petición XHR de usuario capturada:', url);
-                        const stats = data?.data?.user_stats || data?.user_stats || data?.data || {};
-                        const followers = stats.follower_count || stats.followerCount || stats.followers;
-                        if (typeof followers === 'number') {
-                            console.log(`🦁 [EIZ Metrics] Seguidores detectados: ${followers}`);
-                            enviarAlDashboard({
-                                platform: 'tiktok',
-                                followers
-                            });
-                        }
-                    } catch (e) {
-                        // Respuesta no es JSON o formato inválido
-                    }
-                }
-            }
+    pagina.XMLHttpRequest.prototype.send = function () {
+        this.addEventListener('load', function () {
+            try { procesarRespuesta(this._url, this.responseText, 'XHR'); } catch (e) { /* responseType no texto */ }
         });
         return originalSend.apply(this, arguments);
     };
