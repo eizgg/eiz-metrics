@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react'
 import {
   AreaChart,
   Area,
@@ -6,35 +5,17 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from 'recharts'
 import type { FollowerDataPoint } from '../types'
 import { ChartTooltip } from './ChartTooltip'
 import { formatNumber } from '../utils/formatters'
+import { useIsMobile } from '../hooks/useMediaQuery'
+import { Card, PLATFORM_COLORS, PLATFORM_LABELS } from './ui'
 
 interface GrowthChartProps {
   data: FollowerDataPoint[]
-}
-
-const PLATFORM_COLORS: Record<string, string> = {
-  instagram: '#E1306C',
-  tiktok: '#00f2ea',
-  youtube: '#FF0000',
-}
-
-const styles: Record<string, CSSProperties> = {
-  card: {
-    background: 'rgba(168,85,247,0.04)',
-    border: '1px solid rgba(168,85,247,0.1)',
-    borderRadius: 14,
-    padding: '20px 24px',
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: 600,
-    color: '#e2d4f0',
-    marginBottom: 20,
-  },
 }
 
 function formatXDate(d: string): string {
@@ -43,10 +24,10 @@ function formatXDate(d: string): string {
 }
 
 export function GrowthChart({ data }: GrowthChartProps) {
+  const mobile = useIsMobile()
   return (
-    <div style={styles.card}>
-      <div style={styles.title}>Crecimiento de seguidores</div>
-      <ResponsiveContainer width="100%" height={220}>
+    <Card title="Crecimiento de seguidores" subtitle="Seguidores por plataforma, día a día" icon="trend-up">
+      <ResponsiveContainer width="100%" height={mobile ? 200 : 240}>
         <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
           <defs>
             {Object.entries(PLATFORM_COLORS).map(([platform, color]) => (
@@ -56,34 +37,30 @@ export function GrowthChart({ data }: GrowthChartProps) {
               </linearGradient>
             ))}
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(168,85,247,0.08)" />
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(168,85,247,0.08)" vertical={false} />
           <XAxis
             dataKey="date"
             tickFormatter={formatXDate}
             tick={{ fill: '#6b7280', fontSize: 11 }}
             axisLine={false}
             tickLine={false}
+            minTickGap={mobile ? 32 : 20}
           />
           <YAxis
             tickFormatter={(v: number) => formatNumber(v)}
             tick={{ fill: '#6b7280', fontSize: 11 }}
             axisLine={false}
             tickLine={false}
-            width={45}
+            width={42}
           />
-          <Tooltip
-            content={
-              <ChartTooltip
-                formatter={(v) => formatNumber(v)}
-              />
-            }
-          />
+          <Tooltip content={<ChartTooltip formatter={(v) => formatNumber(v)} />} />
+          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, color: '#9ca3af', fontFamily: "'DM Sans', sans-serif", paddingTop: 6 }} />
           {Object.entries(PLATFORM_COLORS).map(([platform, color]) => (
             <Area
               key={platform}
               type="monotone"
               dataKey={platform}
-              name={platform.charAt(0).toUpperCase() + platform.slice(1)}
+              name={PLATFORM_LABELS[platform]}
               stroke={color}
               strokeWidth={2}
               fill={`url(#grad-${platform})`}
@@ -93,6 +70,6 @@ export function GrowthChart({ data }: GrowthChartProps) {
           ))}
         </AreaChart>
       </ResponsiveContainer>
-    </div>
+    </Card>
   )
 }

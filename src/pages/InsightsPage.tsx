@@ -1,6 +1,12 @@
-import { Card, COLORS, EmptyState, Markdown, MONO, PageHeader, Pill, liftColor } from '../components/ui'
+import { Link } from 'react-router-dom'
+import { AiPanel, EvidenceChip, LiftBar, TrustNote } from '../components/ai'
+import { useBasePath } from '../components/Layout'
+import { Button, Callout, Card, COLORS, EmptyState, Icon, Markdown, PageHeader, PageSkeleton, Pill } from '../components/ui'
 import { useAccount } from '../context/AccountContext'
+import { useDashboardVideos } from '../hooks/useDashboardData'
 import { useAttributeLift, useInsights } from '../hooks/useAccountInsights'
+import { useIsMobile } from '../hooks/useMediaQuery'
+import { demoInsights, demoLifts } from '../data/demo'
 import { ATTRIBUTE_LABELS } from '../../lib/analysis/patterns'
 import type { AttributeName } from '../../lib/analysis/patterns'
 import { formatDate } from '../utils/formatters'
@@ -11,24 +17,37 @@ function label(attribute: string): string {
 }
 
 function PatternRow({ row }: { row: AttributeLiftRow }) {
+  const mobile = useIsMobile()
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: `1px solid ${COLORS.cardBorder}` }}>
-      <div style={{ fontSize: 14, color: COLORS.textSoft }}>
-        <span style={{ color: COLORS.muted }}>{label(row.attribute)}:</span> {row.value}
+    <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0, 1.2fr) minmax(140px, 1fr)', gap: mobile ? 8 : 16, alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${COLORS.cardBorder}` }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14, color: COLORS.text, fontWeight: 500, overflowWrap: 'anywhere' }}>
+          <span style={{ color: COLORS.dim, fontWeight: 400, textTransform: 'capitalize' }}>{label(row.attribute)}: </span>
+          {row.value}
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 5, flexWrap: 'wrap' }}>
+          <EvidenceChip n={row.n} lowSample={row.lowSample} />
+          {row.medianRetention !== null && <Pill color={COLORS.muted} title="Retención mediana de los videos con este atributo">ret. {row.medianRetention.toFixed(0)}%</Pill>}
+        </div>
       </div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <span style={{ fontSize: 11, color: COLORS.dim }}>n={row.n}</span>
-        {row.medianRetention !== null && <span style={{ fontSize: 11, color: COLORS.dim }}>ret {row.medianRetention.toFixed(0)}%</span>}
-        <span style={{ fontFamily: MONO, fontWeight: 600, color: liftColor(row.lift) }}>{row.lift !== null ? `${row.lift.toFixed(1)}×` : '—'}</span>
-      </div>
+      <LiftBar lift={row.lift} />
     </div>
   )
 }
 
 export function InsightsPage() {
   const { accountId } = useAccount()
-  const { data: lifts, loading: liftLoading } = useAttributeLift(accountId)
-  const { data: insights, loading: insightLoading } = useInsights(accountId)
+  const base = useBasePath()
+  const mobile = useIsMobile()
+  const { isDemo, loading: videosLoading } = useDashboardVideos()
+  const { data: liveLifts, loading: liftLoading } = useAttributeLift(accountId)
+  const { data: liveInsights, loading: insightLoading } = useInsights(accountId)
+
+  if (liftLoading || insightLoading || videosLoading) return <PageSkeleton cards={2} />
+
+  const useDemo = isDemo && liveLifts.length === 0 && liveInsights.length === 0
+  const lifts = useDemo ? demoLifts : liveLifts
+  const insights = useDemo ? demoInsights : liveInsights
 
   const reliable = lifts.filter((l) => !l.lowSample && l.lift !== null)
   const top = reliable.filter((l) => (l.lift ?? 0) > 1.15).sort((a, b) => (b.lift ?? 0) - (a.lift ?? 0)).slice(0, 8)
@@ -36,52 +55,92 @@ export function InsightsPage() {
   const lowSample = lifts.filter((l) => l.lowSample).length
   const report = insights.find((i) => i.kind === 'reporte_semanal')
   const alerts = insights.filter((i) => i.kind === 'alerta').slice(0, 5)
-
-  if (liftLoading || insightLoading) return <span style={{ color: COLORS.dim, fontSize: 14 }}>Cargando…</span>
-
+  const feedbacks = insights.filter((i) => i.kind === 'estrategia').slice(0, 3)
   const empty = lifts.length === 0 && insights.length === 0
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <PageHeader title="Qué funciona" subtitle="Patrones que levantan (o bajan) el rendimiento, con su evidencia" />
+      <PageHeader
+        eyebrow="Lectura de la IA"
+        title="Qué funciona"
+        subtitle="Patrones que levantan (o bajan) el rendimiento, con la evidencia detrás de cada uno."
+        right={useDemo ? <Pill color={COLORS.warn} size="md">Ejemplo</Pill> : report ? <Pill color={COLORS.muted} icon="clock" size="md">Último análisis: {formatDate(report.createdAt)}</Pill> : undefined}
+      />
 
       {empty && (
         <EmptyState
+          icon="sparkle"
           title="Todavía no hay análisis para esta cuenta"
-          hint="El cron nocturno (api/cron/analyze) calcula scores, patrones y el reporte semanal. Los patrones de contenido necesitan video_content (Fase E)."
+          hint="El cron nocturno calcula scores, patrones y el reporte semanal a partir de tus videos. Los patrones de contenido (hook, formato, tono) aparecen cuando el worker analiza los videos."
+          action={
+            <Link to={`${base}/accounts`} style={{ textDecoration: 'none' }}>
+              <Button variant="ghost" icon="link">Revisar cuentas conectadas</Button>
+            </Link>
+          }
         />
       )}
 
       {alerts.length > 0 && (
-        <Card title="Alertas recientes">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {alerts.map((a) => (
-              <div key={a.id}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.warn }}>{a.title}</div>
-                <div style={{ fontSize: 13, color: COLORS.textSoft }}>{a.bodyMd}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {alerts.map((a) => (
+            <Callout key={a.id} kind="warn" title={a.title}>
+              <Markdown text={a.bodyMd} compact />
+              <div style={{ fontSize: 11, color: COLORS.dim, marginTop: 4 }}>{formatDate(a.createdAt)}</div>
+            </Callout>
+          ))}
+        </div>
+      )}
+
+      {report && (
+        <AiPanel
+          title={report.title}
+          meta={`Reporte semanal · ${report.periodStart && report.periodEnd ? `${report.periodStart} → ${report.periodEnd}` : formatDate(report.createdAt)}`}
+          copyText={report.bodyMd}
+          collapsible
+        >
+          <Markdown text={report.bodyMd} />
+        </AiPanel>
+      )}
+
+      {(top.length > 0 || weak.length > 0) && (
+        <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+          <Card title="Seguí por acá" subtitle="Atributos que rinden más que tu mediana" icon="trend-up">
+            {top.length === 0 ? <div style={{ color: COLORS.dim, fontSize: 13 }}>Sin patrones ganadores con muestra suficiente.</div> : top.map((r) => <PatternRow key={`${r.attribute}:${r.value}`} row={r} />)}
+          </Card>
+          <Card title="Lo que no rinde" subtitle="Atributos por debajo de 0.7× la mediana" icon="trend-down">
+            {weak.length === 0 ? <div style={{ color: COLORS.dim, fontSize: 13 }}>Nada por debajo de 0.7× con muestra suficiente.</div> : weak.map((r) => <PatternRow key={`${r.attribute}:${r.value}`} row={r} />)}
+          </Card>
+        </div>
+      )}
+
+      {(top.length > 0 || weak.length > 0) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <TrustNote>
+            El <strong style={{ color: COLORS.muted }}>lift</strong> compara la mediana de views de los videos con ese atributo contra la mediana de toda la cuenta: 1.6× significa 60% más views. Se calcula en código, no lo estima la IA.
+          </TrustNote>
+          {lowSample > 0 && (
+            <TrustNote>
+              {lowSample} grupo{lowSample > 1 ? 's' : ''} con menos de 3 videos no se muestra{lowSample > 1 ? 'n' : ''}: con tan poca muestra el lift es ruido.
+            </TrustNote>
+          )}
+        </div>
+      )}
+
+      {feedbacks.length > 0 && (
+        <Card title="Feedback de guiones recientes" subtitle="Lo que la IA opinó de tus últimos guiones (desde Estrategia)" icon="sparkle">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {feedbacks.map((f) => (
+              <div key={f.id} style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(168,85,247,0.05)', border: `1px solid ${COLORS.cardBorder}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: COLORS.dim, marginBottom: 6 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="pencil" size={12} /> {f.title}</span>
+                  <span>{formatDate(f.createdAt)}</span>
+                </div>
+                <Markdown text={f.bodyMd} compact />
               </div>
             ))}
           </div>
         </Card>
       )}
-
-      {report && (
-        <Card title={report.title} right={<Pill>{formatDate(report.createdAt)}</Pill>}>
-          <Markdown text={report.bodyMd} />
-        </Card>
-      )}
-
-      {(top.length > 0 || weak.length > 0) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-          <Card title="Seguí por acá">
-            {top.length === 0 ? <div style={{ color: COLORS.dim, fontSize: 13 }}>Sin patrones ganadores con muestra suficiente.</div> : top.map((r) => <PatternRow key={`${r.attribute}:${r.value}`} row={r} />)}
-          </Card>
-          <Card title="Lo que no rinde">
-            {weak.length === 0 ? <div style={{ color: COLORS.dim, fontSize: 13 }}>Nada por debajo de 0.7× con muestra suficiente.</div> : weak.map((r) => <PatternRow key={`${r.attribute}:${r.value}`} row={r} />)}
-          </Card>
-        </div>
-      )}
-      {lowSample > 0 && <div style={{ fontSize: 12, color: COLORS.dim }}>{lowSample} grupos no se muestran por poca muestra (menos de 3 videos).</div>}
     </div>
   )
 }

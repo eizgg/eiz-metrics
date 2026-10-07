@@ -1,4 +1,6 @@
 import type { VideoWithMetrics, FollowerDataPoint } from '../types'
+import type { AttributeLiftRow } from '../types/content'
+import type { Insight } from '../types/insights'
 
 export const demoVideos: VideoWithMetrics[] = [
   // Instagram
@@ -218,3 +220,51 @@ export const demoFollowers: FollowerDataPoint[] = Array.from({ length: 5 }, (_, 
     youtube: Math.round(890 + i * 30 + Math.random() * 20),
   }
 })
+
+// Insights de ejemplo: muestran cómo se ve la lectura de la IA antes de que corra el cron de análisis
+export const demoInsights: Insight[] = [
+  {
+    id: 'demo-alert-1',
+    accountId: 'demo',
+    kind: 'alerta',
+    periodStart: null,
+    periodEnd: null,
+    title: '"Barrio de noche" está explotando en TikTok',
+    bodyMd: 'Lleva **3.1× las views** que la mediana de tus últimos 20 videos a las 72 h. Conviene responder comentarios hoy y subir un recorte del mismo tema esta semana.',
+    createdAt: '2025-02-19T04:30:00Z',
+    readAt: null,
+  },
+  {
+    id: 'demo-report-1',
+    accountId: 'demo',
+    kind: 'reporte_semanal',
+    periodStart: '2025-02-10',
+    periodEnd: '2025-02-16',
+    title: 'Reporte semanal · 10 al 16 de febrero',
+    bodyMd: [
+      '### Qué funcionó',
+      '- Los videos con **hook de pregunta** retienen 12 puntos más que el promedio (n=6).',
+      '- El formato **caminando** sostiene la retención arriba del 60% en TikTok e Instagram.',
+      '- Publicar entre las **19 y las 21 h** duplicó los shares respecto a la mañana.',
+      '',
+      '### Qué mejorar',
+      '- Los videos de más de 60 segundos caen al 38% de retención: cortá antes del segundo giro.',
+      '- Hace dos semanas que no hay CTA de **escuchar el tema**: los que lo tienen suman 2× saves.',
+      '',
+      '### Para esta semana',
+      '- Un snippet de estudio con pregunta al inicio, 30 a 45 segundos, a las 20 h.',
+    ].join('\n'),
+    createdAt: '2025-02-17T04:30:00Z',
+    readAt: null,
+  },
+]
+
+export const demoLifts: AttributeLiftRow[] = [
+  { attribute: 'hook_type', value: 'pregunta', n: 6, medianPerformance: 1.6, medianRetention: 66, lift: 1.6, lowSample: false },
+  { attribute: 'format', value: 'caminando', n: 5, medianPerformance: 1.4, medianRetention: 63, lift: 1.4, lowSample: false },
+  { attribute: 'hour_slot', value: '19-21h', n: 8, medianPerformance: 1.3, medianRetention: 58, lift: 1.3, lowSample: false },
+  { attribute: 'audio_type', value: 'own_music', n: 11, medianPerformance: 1.2, medianRetention: 57, lift: 1.2, lowSample: false },
+  { attribute: 'duration_bucket', value: '60s+', n: 4, medianPerformance: 0.5, medianRetention: 38, lift: 0.5, lowSample: false },
+  { attribute: 'cta_type', value: 'ninguno', n: 7, medianPerformance: 0.6, medianRetention: 49, lift: 0.6, lowSample: false },
+  { attribute: 'format', value: 'lyric', n: 2, medianPerformance: 0.9, medianRetention: 52, lift: 0.9, lowSample: true },
+]

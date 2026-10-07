@@ -90,6 +90,8 @@ Tema oscuro con violeta como color identitario del artista.
 - Retención: verde `#22c55e` (≥55%), amarillo `#eab308` (45-55%), rojo `#ef4444` (<45%)
 - Fuentes: DM Sans (cuerpo) + JetBrains Mono (números), cargadas desde Google Fonts CDN
 - Cards: fondo `rgba(168,85,247,0.04)`, borde `rgba(168,85,247,0.1)`, radius 14px
+- Lo generado por IA va siempre en `AiPanel` (borde en gradiente, chip "IA", fecha/modelo, copiar, nota "las cifras las calcula el código")
+- Responsive: breakpoint único `useIsMobile()` (≤720px) decide los cambios de estructura (nav inferior, filas → tarjetas, grillas 2×2). `index.html` tiene la única CSS global (reset, `:focus-visible`, hover por `data-hover`, keyframes, reduced motion): todo lo demás sigue siendo inline. Ver `docs/UX_UI_REVIEW.md`.
 
 ## Arquitectura
 
@@ -97,12 +99,13 @@ Tema oscuro con violeta como color identitario del artista.
 src/
 ├── types/                   # index.ts (Platform, Video, VideoWithMetrics, SortKey…), content.ts, audience.ts, insights.ts
 ├── lib/                     # supabase.ts, queryClient.ts (react-query), api.ts (POST autenticado a /api)
-├── context/                 # AuthContext (magic link), AccountContext (cuenta activa; modo legacy/multi)
+├── context/                 # AuthContext (magic link), AccountContext (cuenta activa; modo legacy/multi), ToastContext (avisos)
 ├── hooks/                   # react-query: useVideos(accountId), useFollowerCounts, useVideoDetail, useVideoHistory,
-│                            #   useAccountInsights, usePlatformAccounts, useCompetitors, useStrategy, useDashboardData
-├── components/              # StatCard, PlatformFilter, VideoList/Row, charts, ChartTooltip, Layout, RetentionChart, ui.tsx (kit)
+│                            #   useAccountInsights, usePlatformAccounts, useCompetitors, useStrategy, useDashboardData; useMediaQuery (useIsMobile)
+├── components/              # ui.tsx (kit: tokens, Icon, Button, Card, Skeleton, Callout, Toast…), ai.tsx (AiPanel, AiProgress, FeedbackView,
+│                            #   EvidenceChip, LiftBar), Layout (header + nav inferior en celular), StatCard, PlatformFilter, VideoList/Row, IdeaCard, charts
 ├── pages/                   # Videos, VideoDetail, Insights ("Qué funciona"), Audience, Competition, Strategy, Accounts, Login
-├── data/demo.ts             # data de ejemplo (fallback)
+├── data/demo.ts             # data de ejemplo (videos, seguidores, insights y patrones) como fallback
 ├── utils/                   # formatters.ts, metrics.ts (adaptador de lib/analysis), accounts.ts
 ├── Dashboard.tsx            # Resumen (orquesta stats y gráficos)
 ├── App.tsx                  # Router: /a/:slug/* (multi-cuenta) y /* (legado)
@@ -126,7 +129,7 @@ api/                         # 5 funciones de Vercel (el plan Hobby limita a 12)
 worker/                      # análisis de video (Docker: ffmpeg, yt-dlp, faster-whisper, tesseract) — fuera de Vercel
 scripts/                     # sync.ts (manual), seed-eiz-account.ts, tiktok-userscript.user.js
 supabase/migrations/         # SQL versionado
-docs/                        # PROMPT_MEJORAS_V2.md, ESTADO_V2.md, tiktok-endpoints.md
+docs/                        # PROMPT_MEJORAS_V2.md, ESTADO_V2.md, UX_UI_REVIEW.md, tiktok-endpoints.md
 public/                      # terms.html, privacy.html
 vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites (SPA)
 ```
