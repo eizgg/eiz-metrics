@@ -32,10 +32,13 @@ async function callTool<T extends z.ZodType>(system: string, user: string, toolN
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
       model: options.model ?? process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5',
-      max_tokens: 4000,
-      system,
+      // El razonamiento adaptativo también consume max_tokens: se deja margen para que no corte el JSON
+      max_tokens: 16000,
+      output_config: { effort: 'medium' },
+      // Sonnet 5.5 rechaza tool_choice "tool"/"any" (400): se usa "auto" y se pide la herramienta por nombre
+      system: `${system}\n\nEntregá el resultado SOLO llamando a la herramienta "${toolName}". No respondas con texto.`,
       tools: [{ name: toolName, description: 'Devuelve el resultado estructurado', input_schema: z.toJSONSchema(schema) }],
-      tool_choice: { type: 'tool', name: toolName },
+      tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: user }],
     }),
   })
