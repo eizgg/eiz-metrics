@@ -1,6 +1,7 @@
 // Snapshot semanal de competidores (cron semanal).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { firstEmbedded } from '../ingest/embed.js'
 import { fetchInstagramCompetitor, fetchYoutubeCompetitor } from './fetch.js'
 import { avgEngagementRate, postsPerWeek } from './metrics.js'
 import type { CompetitorFetch } from './types.js'
@@ -24,10 +25,11 @@ async function ownInstagramCredentials(supabase: SupabaseClient, accountId: stri
     .select('external_id, platform_credentials(access_token)')
     .eq('account_id', accountId)
     .eq('platform', 'instagram')
-    .eq('status', 'active')
+    .in('status', ['active', 'error'])
     .limit(1)
-  const row = (data ?? [])[0] as { external_id: string; platform_credentials: Array<{ access_token: string }> | null } | undefined
-  const token = row?.platform_credentials?.[0]?.access_token
+  type Cred = { access_token: string }
+  const row = (data ?? [])[0] as { external_id: string; platform_credentials: Cred | Cred[] | null } | undefined
+  const token = firstEmbedded(row?.platform_credentials)?.access_token
   return row && token ? { igUserId: row.external_id, token } : null
 }
 
