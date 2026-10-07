@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/queryClient'
 import { AuthProvider } from './context/AuthContext'
 import { AccountProvider, useAccount } from './context/AccountContext'
+import { ToastProvider } from './context/ToastContext'
 import { Layout } from './components/Layout'
 import { Dashboard } from './Dashboard'
 import { LoginPage } from './pages/LoginPage'
@@ -43,7 +44,12 @@ function Root() {
   const { mode, account } = useAccount()
   const { slug } = useParams()
   if (mode === 'loading') {
-    return <div style={{ minHeight: '100vh', background: '#0a0010', color: '#6b7280', fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Cargando…</div>
+    return (
+      <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg, #0a0010 0%, #0f0519 45%, #110820 100%)', color: '#6b7280', fontFamily: "'DM Sans', sans-serif", display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, #a855f7, #7c3aed)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 20, animation: 'eiz-pulse 1.2s ease-in-out infinite' }}>E</div>
+        Cargando EIZ Metrics…
+      </div>
+    )
   }
   if (mode === 'needs-login') return <LoginPage />
   if (mode === 'multi' && !slug && account) return <Navigate to={`/a/${account.slug}`} replace />
@@ -55,12 +61,14 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AccountProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/a/:slug/*" element={<Root />} />
-              <Route path="/*" element={<Root />} />
-            </Routes>
-          </BrowserRouter>
+          <ToastProvider>
+            <BrowserRouter>
+              <Routes>
+                <Route path="/a/:slug/*" element={<Root />} />
+                <Route path="/*" element={<Root />} />
+              </Routes>
+            </BrowserRouter>
+          </ToastProvider>
         </AccountProvider>
       </AuthProvider>
     </QueryClientProvider>

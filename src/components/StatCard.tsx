@@ -1,9 +1,17 @@
 import type { CSSProperties } from 'react'
+import { useIsMobile } from '../hooks/useMediaQuery'
+import { COLORS, Icon, MONO, type IconName } from './ui'
 
 interface BreakdownItem {
   label: string
   value: string
   color: string
+}
+
+export interface Trend {
+  // Variación porcentual (ej. +2.3) y el período que describe
+  pct: number
+  label: string
 }
 
 interface StatCardProps {
@@ -12,44 +20,54 @@ interface StatCardProps {
   sub?: string
   accent?: boolean
   breakdown?: BreakdownItem[]
+  trend?: Trend | null
+  icon?: IconName
+  // Tooltip con la definición de la métrica
+  help?: string
 }
 
 const styles: Record<string, CSSProperties> = {
   card: {
-    background: 'rgba(168,85,247,0.04)',
-    border: '1px solid rgba(168,85,247,0.1)',
+    background: COLORS.cardBg,
+    border: `1px solid ${COLORS.cardBorder}`,
     borderRadius: 14,
-    padding: '20px 24px',
+    padding: '18px 20px',
     display: 'flex',
     flexDirection: 'column',
     gap: 6,
-    flex: 1,
     minWidth: 0,
+    position: 'relative',
+    overflow: 'hidden',
   },
   label: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: '#9ca3af',
+    fontSize: 11.5,
+    fontWeight: 600,
+    color: COLORS.muted,
     letterSpacing: '0.06em',
     textTransform: 'uppercase',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
   },
   value: {
-    fontFamily: "'JetBrains Mono', monospace",
+    fontFamily: MONO,
     fontSize: 28,
     fontWeight: 600,
-    color: '#f3e8ff',
+    color: COLORS.text,
     lineHeight: 1.1,
+    letterSpacing: '-0.02em',
   },
   sub: {
     fontSize: 12,
-    color: '#6b7280',
+    color: COLORS.dim,
+    lineHeight: 1.4,
   },
   divider: {
-    borderTop: '1px solid rgba(168,85,247,0.1)',
+    borderTop: `1px solid ${COLORS.cardBorder}`,
     marginTop: 6,
     paddingTop: 8,
     display: 'flex',
-    flexDirection: 'column' as const,
+    flexDirection: 'column',
     gap: 4,
   },
   breakdownRow: {
@@ -63,7 +81,7 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 5,
     fontSize: 11,
-    color: '#9ca3af',
+    color: COLORS.muted,
   },
   breakdownDot: {
     width: 6,
@@ -72,22 +90,44 @@ const styles: Record<string, CSSProperties> = {
     flexShrink: 0,
   },
   breakdownValue: {
-    fontFamily: "'JetBrains Mono', monospace",
+    fontFamily: MONO,
     fontSize: 11,
     fontWeight: 600,
-    color: '#c084fc',
+    color: COLORS.primaryLight,
   },
 }
 
-export function StatCard({ label, value, sub, accent, breakdown }: StatCardProps) {
+export function StatCard({ label, value, sub, accent, breakdown, trend, icon, help }: StatCardProps) {
+  const mobile = useIsMobile()
+  const trendUp = trend ? trend.pct >= 0 : true
   return (
-    <div style={{
-      ...styles.card,
-      ...(accent ? { borderColor: 'rgba(168,85,247,0.3)', background: 'rgba(168,85,247,0.08)' } : {}),
-    }}>
-      <span style={styles.label}>{label}</span>
-      <span style={styles.value}>{value}</span>
-      {sub && <span style={styles.sub}>{sub}</span>}
+    <div
+      data-hover="lift"
+      title={help}
+      style={{
+        ...styles.card,
+        padding: mobile ? '14px 14px' : styles.card.padding,
+        ...(accent ? { borderColor: 'rgba(168,85,247,0.3)', background: 'rgba(168,85,247,0.08)' } : {}),
+      }}
+    >
+      {accent && <div aria-hidden="true" style={{ position: 'absolute', top: -40, right: -40, width: 120, height: 120, borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.35), transparent 70%)' }} />}
+      <span style={styles.label}>
+        {icon && <Icon name={icon} size={13} color={accent ? COLORS.primaryLight : COLORS.dim} />}
+        {label}
+      </span>
+      <span style={{ ...styles.value, fontSize: mobile ? 22 : 28 }}>{value}</span>
+      {(sub || trend) && (
+        <span style={{ ...styles.sub, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {trend && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontFamily: MONO, fontWeight: 600, color: trendUp ? COLORS.good : COLORS.bad, fontSize: 12 }}>
+              <Icon name={trendUp ? 'trend-up' : 'trend-down'} size={12} />
+              {trendUp ? '+' : ''}{trend.pct.toFixed(1)}%
+              <span style={{ color: COLORS.dim, fontFamily: 'inherit', fontWeight: 400 }}> {trend.label}</span>
+            </span>
+          )}
+          {sub && !(mobile && trend) && <span>{sub}</span>}
+        </span>
+      )}
       {breakdown && breakdown.length > 0 && (
         <div style={styles.divider}>
           {breakdown.map((item) => (
