@@ -21,6 +21,7 @@ const NAV: NavItem[] = [
   { to: 'videos', label: 'Videos', short: 'Videos', icon: 'video' },
   { to: 'insights', label: 'Qué funciona', short: 'Insights', icon: 'bolt' },
   { to: 'strategy', label: 'Estrategia', short: 'Estrategia', icon: 'compass' },
+  { to: 'profile', label: 'Perfil', short: 'Perfil', icon: 'user' },
   { to: 'audience', label: 'Audiencia', short: 'Audiencia', icon: 'users' },
   { to: 'competition', label: 'Competencia', short: 'Competencia', icon: 'trophy' },
   { to: 'accounts', label: 'Cuentas', short: 'Cuentas', icon: 'link' },

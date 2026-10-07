@@ -14,6 +14,7 @@ import { AudiencePage } from './pages/AudiencePage'
 import { CompetitionPage } from './pages/CompetitionPage'
 import { StrategyPage } from './pages/StrategyPage'
 import { AccountsPage } from './pages/AccountsPage'
+import { ProfilePage } from './pages/ProfilePage'
 
 function AppRoutes() {
   return (
@@ -25,6 +26,7 @@ function AppRoutes() {
       <Route path="audience" element={<AudiencePage />} />
       <Route path="competition" element={<CompetitionPage />} />
       <Route path="strategy" element={<StrategyPage />} />
+      <Route path="profile" element={<ProfilePage />} />
       <Route path="accounts" element={<AccountsPage />} />
       <Route path="*" element={<Navigate to=".." replace />} />
     </Routes>

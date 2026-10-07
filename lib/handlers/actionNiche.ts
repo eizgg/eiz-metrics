@@ -9,6 +9,10 @@ import { createServiceClient } from '../ingest/sync.js'
 import { computeThemeStats, groupThemes } from '../competitors/niche.js'
 import { findOpportunities, hashtagFrequency } from '../competitors/metrics.js'
 import type { CompetitorPost } from '../competitors/types.js'
+import type { Theme } from '../competitors/niche.js'
+import { withAiCache } from '../ai/cache.js'
+import { loadProfile } from '../strategy/persist.js'
+import { describeCreator } from '../strategy/types.js'
 
 export async function actionNiche(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -16,7 +20,8 @@ export async function actionNiche(req: VercelRequest, res: VercelResponse) {
     const supabase = createServiceClient()
     const user = await getUser(supabase, req)
     if (!user) return res.status(401).json({ error: 'Unauthorized' })
-    const accountId = (req.body as { accountId?: string } | undefined)?.accountId
+    const reqBody = (req.body ?? {}) as { accountId?: string; force?: boolean }
+    const accountId = reqBody.accountId
     if (!accountId || !(await userOwnsAccount(supabase, user.id, accountId))) return res.status(404).json({ error: 'Cuenta no encontrada' })
 
     // Posts de competidores (último snapshot de cada uno)
@@ -51,7 +56,17 @@ export async function actionNiche(req: VercelRequest, res: VercelResponse) {
     for (const o of own) for (const h of o.hashtags) freq.set(h, (freq.get(h) ?? 0) + 1)
     if (freq.size === 0) return res.status(200).json({ ok: true, themes: [], opportunities: [], note: 'Sin hashtags todavía: cargá competidores y sincronizá.' })
 
-    const themes = await groupThemes(freq)
+    // El agrupado de temas es lo único que usa IA: se cachea por el conjunto de hashtags
+    const profile = await loadProfile(supabase, accountId)
+    const creatorDescription = describeCreator(profile ?? { niche: null, region: null })
+    const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 80)
+    const grouped = await withAiCache<{ themes: Theme[] }>(
+      { supabase, accountId, kind: 'nicho_temas' },
+      { hashtags: top, creatorDescription },
+      async () => ({ output: { themes: await groupThemes(freq, { creatorDescription }) } }),
+      { force: reqBody.force === true }
+    )
+    const themes = grouped.output.themes
     const stats = computeThemeStats(themes, competitorPosts, own)
     const opportunities = findOpportunities(stats)
 
@@ -63,7 +78,7 @@ export async function actionNiche(req: VercelRequest, res: VercelResponse) {
       ...(opportunities.length > 0 ? opportunities.map((o) => `- **${o.theme}**: rendís ${o.ownLift}× y la competencia casi no publica`) : ['- Sin oportunidades claras todavía.']),
     ].join('\n')
     await supabase.from('insights').insert({ account_id: accountId, kind: 'nicho', title: 'Temas del nicho', body_md: body, evidence: { themes: stats, opportunities } })
-    return res.status(200).json({ ok: true, themes: stats, opportunities })
+    return res.status(200).json({ ok: true, cached: grouped.cached, themes: stats, opportunities })
   } catch (err) {
     return res.status(500).json({ ok: false, error: (err as Error).message })
   }

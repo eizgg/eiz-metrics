@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { isMissingRelation } from '../lib/queryClient'
 import type { AccountProfile, ContentIdea } from '../types/insights'
+import { profileFromRow, profileToRow } from '../../lib/strategy/profileRow'
+import type { ProfileRow } from '../../lib/strategy/profileRow'
 
 interface IdeaRow {
   id: string
@@ -19,20 +21,8 @@ interface IdeaRow {
   video_id: string | null
 }
 
-interface ProfileRow {
-  bio: string | null
-  voice: string | null
-  pillars: AccountProfile['pillars'] | null
-  audience_description: string | null
-  do_list: string[] | null
-  dont_list: string[] | null
-  own_audio: string[] | null
-  posting_capacity: number | null
-  timezone: string | null
-  preferred_hours: number[] | null
-}
-
 export function useAccountProfile(accountId: string | null) {
+  const client = useQueryClient()
   const q = useQuery({
     queryKey: ['account-profile', accountId],
     enabled: accountId !== null,
@@ -43,15 +33,22 @@ export function useAccountProfile(accountId: string | null) {
         throw new Error(error.message)
       }
       const r = data as ProfileRow | null
-      return r && {
-        bio: r.bio, voice: r.voice, pillars: r.pillars ?? [], audienceDescription: r.audience_description,
-        doList: r.do_list ?? [], dontList: r.dont_list ?? [], ownAudio: r.own_audio ?? [],
-        postingCapacity: r.posting_capacity ?? 3, timezone: r.timezone ?? 'America/Argentina/Buenos_Aires',
-        preferredHours: r.preferred_hours ?? [12, 13, 19, 20, 21],
-      }
+      return r ? profileFromRow(r) : null
     },
   })
-  return { profile: q.data ?? null, loading: accountId !== null && q.isLoading }
+  // Guarda el perfil completo (upsert). Si la migración 0009 no está aplicada, reintenta sin las columnas nuevas.
+  const saveProfile = async (profile: AccountProfile): Promise<string | null> => {
+    if (!accountId) return 'No hay cuenta activa'
+    const attempt = (includeV2: boolean) =>
+      supabase.from('account_profiles').upsert({ account_id: accountId, ...profileToRow(profile, includeV2), updated_at: new Date().toISOString() }, { onConflict: 'account_id' })
+    let { error } = await attempt(true)
+    if (error && /column|schema cache/i.test(error.message)) ({ error } = await attempt(false))
+    if (error) return error.message
+    await client.invalidateQueries({ queryKey: ['account-profile', accountId] })
+    await client.invalidateQueries({ queryKey: ['ai-analysis', accountId] })
+    return null
+  }
+  return { profile: q.data ?? null, loading: accountId !== null && q.isLoading, saveProfile, error: q.error ? (q.error as Error).message : null }
 }
 
 export function useContentIdeas(accountId: string | null) {

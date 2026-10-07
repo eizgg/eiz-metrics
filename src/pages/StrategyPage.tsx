@@ -1,4 +1,7 @@
 import { useMemo, useState, type KeyboardEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { useBasePath } from '../components/Layout'
+import { profileCompleteness } from '../../lib/strategy/types'
 import { useQueryClient } from '@tanstack/react-query'
 import { AiPanel, AiProgress, FeedbackView, type FeedbackData } from '../components/ai'
 import { IdeaCard, IDEA_STATUS } from '../components/IdeaCard'
@@ -33,6 +36,8 @@ export function StrategyPage() {
   const [feedbackText, setFeedbackText] = useState('')
   const [feedback, setFeedback] = useState<FeedbackData | null>(null)
   const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const [cachedNotice, setCachedNotice] = useState(false)
+  const base = useBasePath()
 
   async function run<T>(action: string, body: Record<string, unknown>, key: string): Promise<{ data: T | null; error: string | null }> {
     setBusy(key)
@@ -42,10 +47,12 @@ export function StrategyPage() {
     return result
   }
 
-  async function generateStrategy() {
-    const { error } = await run<{ ideas?: unknown[] }>('strategy', { accountId }, 'strategy')
+  async function generateStrategy(force = false) {
+    setCachedNotice(false)
+    const { data, error } = await run<{ cached?: boolean; saved?: number }>('strategy', { accountId, force }, 'strategy')
     if (error) toast.push('error', `No se pudieron generar las ideas: ${error}`)
-    else toast.push('success', 'Ideas y calendario listos. Aceptá las que quieras grabar.')
+    else if (data?.cached) setCachedNotice(true)
+    else toast.push('success', `${data?.saved ?? 0} ideas y calendario listos. Aceptá las que quieras grabar.`)
   }
 
   async function generateScript(idea: ContentIdea) {
@@ -155,10 +162,32 @@ export function StrategyPage() {
         )}
       </AiPanel>
 
+      {cachedNotice && (
+        <Callout
+          kind="info"
+          title="Tus datos no cambiaron desde la última generación"
+          action={<Button size="sm" variant="ghost" icon="refresh" disabled={busy !== null} onClick={() => void generateStrategy(true)}>Generar igual</Button>}
+        >
+          Las ideas de abajo salieron del mismo perfil, patrones y tendencias. Para que salgan distintas, actualizá el perfil, sincronizá o esperá nuevos datos.
+        </Callout>
+      )}
+
       {generating && (
         <Card>
           <AiProgress steps={STRATEGY_STEPS} label="Generando ideas y calendario" stepSeconds={7} />
         </Card>
+      )}
+
+      {accountId && !profile && (
+        <Callout kind="warn" title="Esta cuenta todavía no tiene perfil" action={<Link to={`${base}/profile`} style={{ textDecoration: 'none' }}><Button size="sm" icon="user">Completar perfil</Button></Link>}>
+          Las ideas, el guion y el feedback se arman a partir de quién sos y de qué va tu contenido.
+        </Callout>
+      )}
+
+      {profile && profileCompleteness(profile).score < 60 && (
+        <Callout kind="info" title={`Perfil al ${profileCompleteness(profile).score}%`} action={<Link to={`${base}/profile`} style={{ textDecoration: 'none' }}><Button size="sm" variant="ghost" icon="pencil">Completar</Button></Link>}>
+          Cuanto más completo el perfil, más precisas y menos genéricas salen las ideas. Falta: {profileCompleteness(profile).missing.slice(0, 4).join(', ')}.
+        </Callout>
       )}
 
       {profile && (
@@ -167,14 +196,24 @@ export function StrategyPage() {
           subtitle="Las ideas se filtran con estas reglas antes de mostrarse"
           icon="compass"
           right={
-            <Button size="sm" variant="ghost" ariaLabel={profileOpen ? 'Contraer' : 'Expandir'} onClick={() => setProfileOpen((o) => !o)}>
-              <Icon name="chevron-down" size={14} style={{ transform: profileOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
-            </Button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Link to={`${base}/profile`} style={{ textDecoration: 'none' }}><Button size="sm" variant="ghost" icon="pencil">Editar</Button></Link>
+              <Button size="sm" variant="ghost" ariaLabel={profileOpen ? 'Contraer' : 'Expandir'} onClick={() => setProfileOpen((o) => !o)}>
+                <Icon name="chevron-down" size={14} style={{ transform: profileOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+              </Button>
+            </div>
           }
         >
           {profileOpen && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13, color: COLORS.textSoft }}>
+              {(profile.niche || profile.region) && <div><strong style={{ color: COLORS.muted, fontWeight: 600 }}>Nicho:</strong> {[profile.niche, profile.region].filter(Boolean).join(' · ')}</div>}
               {profile.voice && <div><strong style={{ color: COLORS.muted, fontWeight: 600 }}>Voz:</strong> {profile.voice}</div>}
+              {profile.currentFocus.filter((f) => !f.until || f.until >= today).length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <strong style={{ color: COLORS.warn, fontWeight: 600 }}>Foco actual:</strong>
+                  {profile.currentFocus.filter((f) => !f.until || f.until >= today).map((f) => <Pill key={f.label} color={COLORS.warn} icon="flame">{f.label}</Pill>)}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ color: COLORS.muted, fontWeight: 600 }}>Pilares:</span>
                 {profile.pillars.map((p) => <Pill key={p.name} title={p.description}>{p.name}</Pill>)}

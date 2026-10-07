@@ -36,6 +36,7 @@ Editor de Supabase (o con la CLI). Son idempotentes.
 | 0003 | Exige `platform_account_id` y cierra la lectura pública (RLS por dueño) | **Solo después del seed** |
 | 0004 | Contenido, retención, audiencia, comentarios, insights | |
 | 0005–0008 | Scoring, cola de análisis, competencia, estrategia | |
+| 0009 | Perfil del creador configurable, caché de análisis de IA (`ai_analyses`), creadores sugeridos | Quita el audio `ZN` del perfil sembrado de EIZ |
 
 ## Ingesta
 

@@ -3,10 +3,13 @@ import { buildCalendar, interleaveByPillar, postingWeekdays, postsPerCalendarWee
 import { generateIdeas, generateScript, giveFeedback, postProcessIdeas } from '../generate.js'
 import type { StrategyContext } from '../generate.js'
 import { accuracyWeight, meanAbsoluteError, predictIndex } from '../predict.js'
+import { emptyProfile } from '../types.js'
 import type { IdeaCandidate, StrategyProfile } from '../types.js'
 import { applyHardRules, distinctiveStems, enforceOwnAudio, findDontViolations, scriptFitsPlatform } from '../validate.js'
 
 const profile: StrategyProfile = {
+  ...emptyProfile(),
+  niche: 'trap / urbano', region: 'Argentina',
   bio: 'EIZ', voice: 'intenso, irónico', audienceDescription: 'barrio',
   pillars: [{ name: 'Barrio', description: 'caminar', weight: 0.5 }, { name: 'Proceso', description: 'crear', weight: 0.3 }, { name: 'Música', description: 'temas', weight: 0.2 }],
   doList: ['Hablar a cámara caminando'],

@@ -1,5 +1,11 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AiPanel, EvidenceChip, LiftBar, TrustNote } from '../components/ai'
+import { useQueryClient } from '@tanstack/react-query'
+import { AiPanel, AiProgress, EvidenceChip, LiftBar, TrustNote } from '../components/ai'
+import { CacheMeta, TipsView, type TipsOutput } from '../components/coach'
+import { useAiAnalysis } from '../hooks/useCoach'
+import { useToast } from '../context/ToastContext'
+import { apiPost } from '../lib/api'
 import { useBasePath } from '../components/Layout'
 import { Button, Callout, Card, COLORS, EmptyState, Icon, Markdown, PageHeader, PageSkeleton, Pill } from '../components/ui'
 import { useAccount } from '../context/AccountContext'
@@ -11,6 +17,8 @@ import { ATTRIBUTE_LABELS } from '../../lib/analysis/patterns'
 import type { AttributeName } from '../../lib/analysis/patterns'
 import { formatDate } from '../utils/formatters'
 import type { AttributeLiftRow } from '../types/content'
+
+const TIPS_STEPS = ['Leyendo tus patrones y tu perfil', 'Mirando qué se mueve en tu nicho', 'Escribiendo consejos con evidencia']
 
 function label(attribute: string): string {
   return ATTRIBUTE_LABELS[attribute as AttributeName] ?? attribute
@@ -42,6 +50,22 @@ export function InsightsPage() {
   const { isDemo, loading: videosLoading } = useDashboardVideos()
   const { data: liveLifts, loading: liftLoading } = useAttributeLift(accountId)
   const { data: liveInsights, loading: insightLoading } = useInsights(accountId)
+  const { analysis: tips } = useAiAnalysis<TipsOutput>(accountId, 'consejos')
+  const toast = useToast()
+  const client = useQueryClient()
+  const [tipsBusy, setTipsBusy] = useState(false)
+  const [tipsNote, setTipsNote] = useState<string | null>(null)
+
+  async function askTips(force: boolean) {
+    setTipsBusy(true)
+    setTipsNote(null)
+    const { data, error } = await apiPost<{ cached: boolean; insufficient?: boolean; message?: string }>('/api/actions/tips', { accountId, force })
+    setTipsBusy(false)
+    if (error) toast.push('error', `No se pudieron generar los consejos: ${error}`)
+    else if (data?.insufficient) setTipsNote(data.message ?? 'Todavía hay poca evidencia.')
+    else toast.push('success', data?.cached ? 'Tus datos no cambiaron: se muestran los consejos guardados.' : 'Consejos listos.')
+    await client.invalidateQueries({ queryKey: ['ai-analysis', accountId] })
+  }
 
   if (liftLoading || insightLoading || videosLoading) return <PageSkeleton cards={2} />
 
@@ -99,6 +123,35 @@ export function InsightsPage() {
           collapsible
         >
           <Markdown text={report.bodyMd} />
+        </AiPanel>
+      )}
+
+      {accountId && (
+        <AiPanel
+          title="Consejos para tus próximos videos"
+          meta="Mezcla lo que te funciona a vos con lo que se está moviendo en tu nicho (competencia) y tu benchmark."
+          actions={
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Button size="sm" variant={tips ? 'ghost' : 'primary'} icon="sparkle" loading={tipsBusy} disabled={tipsBusy} onClick={() => void askTips(false)}>{tips ? 'Actualizar' : 'Pedir consejos'}</Button>
+              {tips && <Button size="sm" variant="ghost" icon="refresh" disabled={tipsBusy} title="Vuelve a llamar a la IA aunque los datos no hayan cambiado" onClick={() => void askTips(true)}>Regenerar</Button>}
+            </div>
+          }
+          footnote={tips ? undefined : null}
+        >
+          {tipsBusy ? (
+            <AiProgress steps={TIPS_STEPS} label="Armando consejos" stepSeconds={6} />
+          ) : tipsNote ? (
+            <Callout kind="info" title="Falta evidencia">{tipsNote}</Callout>
+          ) : tips ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <TipsView output={tips.output} />
+              <CacheMeta createdAt={tips.createdAt} model={tips.model} />
+            </div>
+          ) : (
+            <div style={{ color: COLORS.dim, fontSize: 13, lineHeight: 1.55 }}>
+              Cada consejo cita la evidencia que lo sostiene: un patrón tuyo, un post de la competencia que está rindiendo, un hueco de nicho o tu posición vs. el benchmark. Completá el <Link to={`${base}/profile`} style={{ color: COLORS.primaryLight }}>perfil</Link> y cargá competidores para que sean más precisos.
+            </div>
+          )}
         </AiPanel>
       )}
 
