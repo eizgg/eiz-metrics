@@ -29,7 +29,7 @@ export function Dashboard() {
   const { videos: liveVideos, loading } = useVideos(accountId)
   const { followers: liveFollowers } = useFollowerCounts(accountId)
   const { data: liveInsights } = useInsights(accountId)
-  const { data: scores } = useVideoScores()
+  const { data: allScores } = useVideoScores()
 
   const hasAnyMetrics = liveVideos.some(v => v.fetchedAt !== null)
   const isDemo = !loading && (liveVideos.length === 0 || !hasAnyMetrics)
@@ -127,6 +127,11 @@ export function Dashboard() {
     return dates[dates.length - 1] ?? null
   }, [videos])
 
+  // video_scores no tiene filtro por cuenta: nos quedamos con los de los videos que se muestran
+  const scores = useMemo(() => {
+    const ids = new Set(videos.map((v) => v.id))
+    return allScores.filter((s) => ids.has(s.videoId))
+  }, [allScores, videos])
   const exploded = scores.filter((s) => s.classification === 'exploto').length
   const latestAlert = insights.find((i) => i.kind === 'alerta')
   const latestReport = insights.find((i) => i.kind === 'reporte_semanal')
