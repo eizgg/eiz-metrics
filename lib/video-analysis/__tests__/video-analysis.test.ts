@@ -93,12 +93,15 @@ describe('prompt y request', () => {
     expect(text).toContain('Correcciones humanas')
     expect(text).toContain('"hook_type":"pregunta"')
   })
-  it('buildRequestBody arma imágenes, tool forzada y contexto', () => {
+  it('buildRequestBody arma imágenes, pide la tool por nombre (sin tool_choice forzado) y contexto', () => {
     const body = buildRequestBody('m', [{ timeSeconds: 0, jpegBase64: 'AAA' }, { timeSeconds: 1, jpegBase64: 'BBB' }], ctx) as {
-      tool_choice: { name: string }
+      tool_choice: { type: string }
+      system: string
       messages: Array<{ content: Array<{ type: string }> }>
     }
-    expect(body.tool_choice.name).toBe('report_video_analysis')
+    // Sonnet 5.5 devuelve 400 con tool_choice "tool"/"any": tiene que ser "auto"
+    expect(body.tool_choice.type).toBe('auto')
+    expect(body.system).toContain('"report_video_analysis"')
     expect(body.messages[0].content.filter((c) => c.type === 'image')).toHaveLength(2)
   })
   it('estimateCost solo con precios configurados', () => {

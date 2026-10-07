@@ -46,8 +46,11 @@ export function buildRequestBody(model: string, frames: FrameImage[], ctx: Analy
 
   return {
     model,
-    max_tokens: 3000,
-    system: ANALYST_SYSTEM_PROMPT,
+    // El razonamiento adaptativo también consume max_tokens: se deja margen para que no corte el JSON
+    max_tokens: 8000,
+    output_config: { effort: 'medium' },
+    // Sonnet 5.5 rechaza tool_choice "tool"/"any" (400): se usa "auto" y se pide la herramienta por nombre
+    system: `${ANALYST_SYSTEM_PROMPT}\n\nEntregá el análisis SOLO llamando a la herramienta "${ANALYSIS_TOOL_NAME}". No respondas con texto.`,
     tools: [
       {
         name: ANALYSIS_TOOL_NAME,
@@ -55,7 +58,7 @@ export function buildRequestBody(model: string, frames: FrameImage[], ctx: Analy
         input_schema: analysisJsonSchema(),
       },
     ],
-    tool_choice: { type: 'tool', name: ANALYSIS_TOOL_NAME },
+    tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content }],
   }
 }
