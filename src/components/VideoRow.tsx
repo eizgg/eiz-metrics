@@ -11,7 +11,6 @@ const PLATFORM_COLORS: Record<string, string> = {
   instagram: '#E1306C',
   tiktok: '#00f2ea',
   youtube: '#FF0000',
-  youtube_shorts: '#FF4444',
 }
 
 const styles: Record<string, CSSProperties> = {

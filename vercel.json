@@ -1,20 +1,26 @@
 {
   "rewrites": [
-    { "source": "/terms", "destination": "/terms.html" },
-    { "source": "/privacy", "destination": "/privacy.html" }
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/((?!api/|assets/|.*\\..*).*)",
+      "destination": "/index.html"
+    }
   ],
   "crons": [
     {
-      "path": "/api/cron/fetch-ig-metrics",
+      "path": "/api/cron/sync",
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/cron/fetch-yt-metrics",
-      "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/cron/fetch-tiktok-metrics",
-      "schedule": "0 5 * * *"
+      "path": "/api/cron/daily",
+      "schedule": "30 4 * * *"
     }
   ]
 }
