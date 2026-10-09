@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mockAnthropicTool } from '../../ai/__tests__/mockAnthropic.js'
 import { buildCalendar, interleaveByPillar, postingWeekdays, postsPerCalendarWeek } from '../calendar.js'
 import { generateIdeas, generateScript, giveFeedback, postProcessIdeas } from '../generate.js'
 import type { StrategyContext } from '../generate.js'
@@ -119,8 +120,7 @@ describe('calendario', () => {
 describe('generación con LLM mockeado', () => {
   afterEach(() => vi.unstubAllGlobals())
   const ctx: StrategyContext = { profile, lifts: [{ attribute: 'format', value: 'caminando', lift: 2.1, n: 5, medianPerformance: 2, medianRetention: null, medianSaveRate: null, lowSample: false, videoIds: [] }], commentRequests: ['hacé un tema de la bicisenda'], nicheOpportunities: [], keyDates: [] }
-  const mockTool = (name: string, input: unknown) =>
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'tool_use', name, input }] }) })))
+  const mockTool = (name: string, input: unknown) => mockAnthropicTool(name, input)
 
   it('postProcessIdeas estima el índice y marca hipótesis si no hay lift', () => {
     const out = postProcessIdeas([idea(), idea({ title: 'Sin lift', attributes: { ...attrs, format: 'vlog', hook_type: null } })], ctx)

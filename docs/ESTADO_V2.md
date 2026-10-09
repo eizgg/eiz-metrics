@@ -105,6 +105,9 @@ Probar con 1–2 videos antes del lote de los 20 más vistos. Nunca se automatiz
   repetirla si el perfil no cambió). Las sugerencias de IA para Instagram/TikTok son nombres que el modelo conoce: pueden no
   existir; al agregarlas como competidor el sync las valida y deja el error en `competitor_snapshots`/respuesta del cron.
 - El diagnóstico exige el perfil al menos al 30%; los consejos exigen 2 evidencias (patrones, tendencias, benchmark u horarios).
+- El cliente usa `@anthropic-ai/sdk` con `cache_control` en el system. Con un perfil corto el prefijo queda por debajo del mínimo
+  cacheable (~1K tokens en Sonnet) y el caching de prompts no aplica (silencioso, sin error); revisar `cacheReadTokens` en el uso
+  que devuelven los endpoints si se quiere medir. La caché real de resultados es `ai_analyses`, que sí evita la llamada entera.
 
 ### 9. Limitaciones conocidas
 - Instagram no expone la **duración** del Reel por API: `retention_pct` de IG solo se calcula cuando el worker completa

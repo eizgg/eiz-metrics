@@ -116,8 +116,8 @@ src/
 └── main.tsx                 # Entry point (SIN imports de CSS)
 
 lib/                         # compartido front + backend (imports con extensión .js)
-├── ai/                      # client (ÚNICO punto de llamada a Anthropic: callStructured/callText/postMessages), cache (ai_analyses: hash de
-│                            #   entradas + TTL + force; withAiCache)
+├── ai/                      # client (ÚNICO punto de llamada a Anthropic vía @anthropic-ai/sdk: callStructured/callText/postMessages, system
+│                            #   con cache_control), cache (ai_analyses: hash de entradas + TTL + force; withAiCache); __tests__/mockAnthropic (mock)
 ├── ingest/                  # fetchers normalizados (instagram, youtube, tiktok + extras/analytics), persist, sync, tokens
 ├── analysis/                # metrics, scoring, patterns, diagnostics, alerts, benchmarks, report, pipeline (funciones puras + tests)
 ├── video-analysis/          # schema (zod), prompts, ffmpeg utils, analyze (Claude tool use), queue
@@ -162,7 +162,7 @@ vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites 
 - **Una sola implementación de ingesta**: `lib/ingest/*` la usan el cron, el script manual y los endpoints. Nada de lógica duplicada.
 - **Crons una vez por día** (plan Hobby): `sync` y `daily`. Los comentarios viejos de "cada 6hs" ya no aplican.
 - **El LLM narra, el código calcula**: cifras, scores, lifts, reglas del `dont_list` y capacidad de posteo se validan en código. Los consejos y el diagnóstico citan evidencia por id; los ids inventados se descartan y el punto queda como "hipótesis".
-- **Una sola llamada a la IA por dato nuevo**: toda llamada pasa por `lib/ai/client.ts` y se guarda en `ai_analyses` con el hash de sus entradas (perfil, patrones, hashtags, guion…). Si el hash coincide y no venció el TTL, se reutiliza y no se pega al endpoint. El usuario puede forzar con "Regenerar" (`force: true`).
+- **Una sola llamada a la IA por dato nuevo**: toda llamada pasa por `lib/ai/client.ts` (SDK oficial; en tests se mockea `fetch` con `lib/ai/__tests__/mockAnthropic.ts`) y se guarda en `ai_analyses` con el hash de sus entradas (perfil, patrones, hashtags, guion…). Si el hash coincide y no venció el TTL, se reutiliza y no se pega al endpoint. El usuario puede forzar con "Regenerar" (`force: true`). Además el bloque estable del system (identidad + reglas + instrucción de la herramienta) va con `cache_control` (prompt caching): solo aplica si el prefijo supera el mínimo cacheable del modelo (≈1K tokens); `AiUsage.cacheReadTokens` dice si se aprovechó.
 - **El perfil lo define el usuario, no el código**: nada en prompts ni análisis asume que el creador es EIZ ni de qué nicho es; todo sale de `account_profiles` (`describeCreator`). El "foco actual" tiene fecha de vencimiento y lo vencido se ignora solo.
 - **Creadores sugeridos sin scraping**: YouTube por la Data API pública (verificado); Instagram/TikTok los propone la IA y quedan marcados "a verificar" hasta que el sync oficial los confirme.
 - **Degradación elegante**: sin migraciones aplicadas o sin base, el dashboard muestra data de ejemplo y la ingesta no rompe.
