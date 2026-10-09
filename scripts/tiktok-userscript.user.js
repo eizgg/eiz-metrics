@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         EIZ Metrics - TikTok Interceptor
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @description  Captura métricas de TikTok Creator Center en tiempo real y las envía al Dashboard de EIZ
 // @author       Antigravity AI
 // @match        *://creator.tiktok.com/*
@@ -160,7 +160,7 @@
     let yaLogueoItem = false;
 
     // Helper para procesar listas de videos interceptados
-    function procesarVideos(itemList) {
+    function procesarVideos(itemList, enMilisegundos) {
         if (!itemList || !Array.isArray(itemList) || itemList.length === 0) return;
 
         // Una vez por página: el primer item crudo, para poder ajustar el mapeo si TikTok cambia los nombres
@@ -197,8 +197,8 @@
                 id: String(externalId),
                 title: item.desc || item.title || item.description || '',
                 url: 'https://www.tiktok.com/@' + handle + '/video/' + externalId,
-                // item_list/v1 manda la duración en milisegundos (50034 = 00:50)
-                duration: duracion ? Math.round(duracion / 1000) : null,
+                // item_list/v1 manda la duración en milisegundos (50034 = 00:50); los endpoints legados, en segundos
+                duration: duracion ? Math.round(enMilisegundos ? duracion / 1000 : duracion) : null,
                 // create_time viene en segundos
                 published_at: creado ? (creado < 1e12 ? creado * 1000 : creado) : Date.now(),
                 views: views,
@@ -244,7 +244,7 @@
             const data = JSON.parse(texto);
             if (esLista) {
                 console.log('🦁 [EIZ Metrics] Petición ' + origen + ' de videos capturada:', url.split('?')[0]);
-                procesarVideos(buscarLista(data));
+                procesarVideos(buscarLista(data), /\/item_list\/v1/.test(url));
             }
             if (esSeguidores) {
                 console.log('🦁 [EIZ Metrics] Petición ' + origen + ' de usuario capturada:', url.split('?')[0]);
