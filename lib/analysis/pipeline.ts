@@ -9,6 +9,9 @@ import { computeAttributeLift } from './patterns.js'
 import { buildReportFacts, narrateReport } from './report.js'
 import { scoreVideos } from './scoring.js'
 import { enqueueUnanalyzed } from '../video-analysis/queue.js'
+import { withAiCache } from '../ai/cache.js'
+import { loadProfile } from '../strategy/persist.js'
+import { describeCreator } from '../strategy/types.js'
 import type { AnalysisPlatform, AnalysisVideo, ContentAttrs, MetricPoint, RetentionPoint } from './types.js'
 
 interface VideoRow { id: string; platform: AnalysisPlatform; title: string | null; duration_seconds: number | null; published_at: string | null }
@@ -127,7 +130,15 @@ export async function runAccountAnalysis(supabase: SupabaseClient, accountId: st
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000).toISOString()
   const { data: existing } = await supabase.from('insights').select('id').eq('account_id', accountId).eq('kind', 'reporte_semanal').gte('created_at', weekAgo).limit(1)
   if (!existing || existing.length === 0) {
-    const body = await narrateReport(facts)
+    // La narración va por la caché de IA: mismos hechos → mismo texto, sin volver a llamar a la API
+    const profile = await loadProfile(supabase, accountId).catch(() => null)
+    const creatorDescription = describeCreator(profile ?? { niche: null, region: null })
+    const narrated = await withAiCache<{ body: string }>(
+      { supabase, accountId, kind: 'reporte_semanal' },
+      { facts, creatorDescription },
+      async () => ({ output: { body: await narrateReport(facts, { creatorDescription }) } })
+    )
+    const body = narrated.output.body
     const { error } = await supabase.from('insights').insert({
       account_id: accountId, kind: 'reporte_semanal', period_start: facts.periodStart, period_end: facts.periodEnd,
       title: `Reporte semanal ${facts.periodEnd}`, body_md: body,

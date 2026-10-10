@@ -48,7 +48,7 @@ export const cardStyle: CSSProperties = {
 export type IconName =
   | 'home' | 'video' | 'bolt' | 'users' | 'trophy' | 'compass' | 'link' | 'menu' | 'x'
   | 'sparkle' | 'check' | 'alert' | 'info' | 'copy' | 'chevron-down' | 'chevron-right' | 'arrow-up'
-  | 'arrow-right' | 'external' | 'refresh' | 'clock' | 'flame' | 'trend-up' | 'trend-down' | 'eye' | 'play' | 'calendar' | 'pencil'
+  | 'arrow-right' | 'external' | 'refresh' | 'clock' | 'flame' | 'trend-up' | 'trend-down' | 'eye' | 'play' | 'calendar' | 'pencil' | 'user' | 'plus'
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
   home: <><path d="M3 11 12 3l9 8" /><path d="M5 10v10h14V10" /></>,
@@ -79,6 +79,8 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
   play: <path d="m7 5 12 7-12 7z" />,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M3 10h18" /><path d="M8 3v4" /><path d="M16 3v4" /></>,
   pencil: <><path d="m4 20 4-1 11-11-3-3L5 16z" /><path d="m13 7 3 3" /></>,
+  user: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
+  plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
 }
 
 interface IconProps {

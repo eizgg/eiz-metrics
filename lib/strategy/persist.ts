@@ -1,7 +1,8 @@
 // Persistencia de la estrategia y loop de aprendizaje (predicho vs. real a los 7 días).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { generateIdeas } from './generate.js'
+import { STRATEGY_PROMPT_VERSION, generateIdeas } from './generate.js'
+import { withAiCache } from '../ai/cache.js'
 import type { IdeaGeneration, StrategyContext } from './generate.js'
 import { buildCalendar } from './calendar.js'
 import type { CalendarEntry } from './types.js'
@@ -9,36 +10,13 @@ import { accuracyWeight, meanAbsoluteError } from './predict.js'
 import type { Outcome } from './predict.js'
 import type { AttributeLift } from '../analysis/patterns.js'
 import type { StrategyProfile } from './types.js'
-
-interface ProfileRow {
-  bio: string | null
-  voice: string | null
-  pillars: StrategyProfile['pillars'] | null
-  audience_description: string | null
-  do_list: string[] | null
-  dont_list: string[] | null
-  own_audio: string[] | null
-  posting_capacity: number | null
-  timezone: string | null
-  preferred_hours: number[] | null
-}
+import { profileFromRow } from './profileRow.js'
+import type { ProfileRow } from './profileRow.js'
 
 export async function loadProfile(supabase: SupabaseClient, accountId: string): Promise<StrategyProfile | null> {
   const { data } = await supabase.from('account_profiles').select('*').eq('account_id', accountId).maybeSingle()
   const r = data as ProfileRow | null
-  if (!r) return null
-  return {
-    bio: r.bio,
-    voice: r.voice,
-    pillars: r.pillars ?? [],
-    audienceDescription: r.audience_description,
-    doList: r.do_list ?? [],
-    dontList: r.dont_list ?? [],
-    ownAudio: r.own_audio ?? [],
-    postingCapacity: r.posting_capacity ?? 3,
-    timezone: r.timezone ?? 'America/Argentina/Buenos_Aires',
-    preferredHours: r.preferred_hours ?? [12, 13, 19, 20, 21],
-  }
+  return r ? profileFromRow(r) : null
 }
 
 interface LiftRow {
@@ -71,6 +49,23 @@ export interface GenerateOutcome {
   saved: number
   rejected: IdeaGeneration['rejected']
   calendar: number
+  // true si los datos no cambiaron desde la última generación y no se llamó a la IA
+  cached: boolean
+  generatedAt: string | null
+}
+
+// Lo que determina el resultado de la generación: si nada de esto cambia, no tiene sentido volver a pedir ideas
+export function strategyCacheInput(ctx: StrategyContext): unknown {
+  return {
+    profile: ctx.profile,
+    lifts: ctx.lifts.map((l) => ({ a: l.attribute, v: l.value, n: l.n, lift: l.lift, low: l.lowSample })),
+    comments: ctx.commentRequests,
+    opportunities: ctx.nicheOpportunities,
+    trends: ctx.nicheTrends ?? [],
+    keyDates: ctx.keyDates,
+    ideaCount: ctx.ideaCount ?? 10,
+    focusDay: ctx.today ?? null,
+  }
 }
 
 // Genera ideas, las guarda en content_ideas + insights y arma el calendario de 14 días
@@ -79,13 +74,37 @@ export async function generateAndSaveStrategy(
   accountId: string,
   ctx: Omit<StrategyContext, 'profile' | 'lifts'>,
   startDate: string,
-  options: { apiKey?: string; model?: string } = {}
+  options: { apiKey?: string; model?: string; force?: boolean } = {}
 ): Promise<GenerateOutcome> {
   const profile = await loadProfile(supabase, accountId)
   if (!profile) throw new Error('La cuenta no tiene perfil de identidad (account_profiles): cargalo primero')
   const lifts = await loadLifts(supabase, accountId)
+  const fullCtx: StrategyContext = { ...ctx, profile, lifts }
 
-  const result = await generateIdeas({ ...ctx, profile, lifts }, options)
+  // Caché: mismo perfil + mismos patrones + mismos pedidos → ya hay ideas para eso, no se vuelve a llamar a la IA
+  const scope = { supabase, accountId, kind: 'estrategia' as const }
+  const run = await withAiCache<{ saved: number; rejected: IdeaGeneration['rejected']; calendar: number }>(
+    scope,
+    strategyCacheInput(fullCtx),
+    async () => {
+      const result = await generateIdeas(fullCtx, options)
+      const outcome = await persistIdeas(supabase, accountId, result, fullCtx, startDate)
+      return { output: outcome, model: result.model, usage: result.usage }
+    },
+    { force: options.force, promptVersion: STRATEGY_PROMPT_VERSION }
+  )
+  if (run.cached) return { saved: 0, rejected: [], calendar: 0, cached: true, generatedAt: run.createdAt }
+  return { ...run.output, cached: false, generatedAt: run.createdAt }
+}
+
+async function persistIdeas(
+  supabase: SupabaseClient,
+  accountId: string,
+  result: IdeaGeneration,
+  ctx: StrategyContext,
+  startDate: string
+): Promise<{ saved: number; rejected: IdeaGeneration['rejected']; calendar: number }> {
+  const { profile } = ctx
   if (result.ideas.length === 0) return { saved: 0, rejected: result.rejected, calendar: 0 }
 
   const rows = result.ideas.map((i) => ({

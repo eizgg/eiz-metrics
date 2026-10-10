@@ -40,6 +40,11 @@ describe('rutas dinámicas', () => {
   it('actions: acción desconocida → 404', async () => {
     expect((await call(actions, { query: { action: 'nope' }, method: 'POST' })).status).toBe(404)
   })
+  it('actions del coach: existen y rechazan GET con 405', async () => {
+    for (const action of ['profile', 'tips', 'suggest-creators']) {
+      expect((await call(actions, { query: { action }, method: 'GET' })).status).toBe(405)
+    }
+  })
   it('tiktok: preflight CORS para el userscript y acción desconocida', async () => {
     const pre = await call(tiktok, { method: 'OPTIONS', query: { action: 'upload' } })
     expect(pre.status).toBe(204)

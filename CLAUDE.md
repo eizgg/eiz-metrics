@@ -73,8 +73,9 @@ create table public.follower_counts (
 | 0007 | Fase F: `competitors`, `competitor_snapshots`, `reference_videos` |
 | 0008 | Fase G: `account_profiles` (sembrado con el perfil de EIZ), `content_ideas`, `content_scripts`, `content_calendar` |
 | 0009 | `claim_analysis_job()` recupera jobs `running` abandonados (>30 min): reencola o falla tras 3 intentos |
+| 0010 | Perfil del creador configurable (`niche`, `region`, `language`, `goals`, `current_focus` con vencimiento, `content_formats`, `inspirations`); `ai_analyses` (caché de todo lo que genera la IA, con hash de entradas y TTL); `creator_suggestions` (creadores del nicho sugeridos). Quita `ZN` del perfil de EIZ |
 
-Reglas: todo INSERT de ingesta y análisis va con `service_role`; el front solo lee (y edita `video_content`, `insights`, ideas, competidores propios). El código funciona también **antes** de aplicar las migraciones (modo legado: env vars, sin filtro por cuenta, tablas faltantes se ignoran).
+Reglas: todo INSERT de ingesta y análisis va con `service_role`; el front solo lee (y edita `video_content`, `insights`, ideas, competidores propios, su `account_profiles` y el estado de `creator_suggestions`). El código funciona también **antes** de aplicar las migraciones (modo legado: env vars, sin filtro por cuenta, tablas faltantes se ignoran).
 
 ### Por qué video_metrics es serie de tiempo
 
@@ -91,7 +92,7 @@ Tema oscuro con violeta como color identitario del artista.
 - Retención: verde `#22c55e` (≥55%), amarillo `#eab308` (45-55%), rojo `#ef4444` (<45%)
 - Fuentes: DM Sans (cuerpo) + JetBrains Mono (números), cargadas desde Google Fonts CDN
 - Cards: fondo `rgba(168,85,247,0.04)`, borde `rgba(168,85,247,0.1)`, radius 14px
-- Lo generado por IA va siempre en `AiPanel` (borde en gradiente, chip "IA", fecha/modelo, copiar, nota "las cifras las calcula el código")
+- Lo generado por IA va siempre en `AiPanel` (borde en gradiente, chip "IA", fecha/modelo, copiar, nota "las cifras las calcula el código"). Los paneles cacheados muestran `CacheMeta` ("generado el X · se regenera solo si cambian tus datos") y un botón "Regenerar" que fuerza la llamada
 - Responsive: breakpoint único `useIsMobile()` (≤720px) decide los cambios de estructura (nav inferior, filas → tarjetas, grillas 2×2). `index.html` tiene la única CSS global (reset, `:focus-visible`, hover por `data-hover`, keyframes, reduced motion): todo lo demás sigue siendo inline. Ver `docs/UX_UI_REVIEW.md`.
 
 ## Arquitectura
@@ -102,10 +103,13 @@ src/
 ├── lib/                     # supabase.ts, queryClient.ts (react-query), api.ts (POST autenticado a /api)
 ├── context/                 # AuthContext (magic link), AccountContext (cuenta activa; modo legacy/multi), ToastContext (avisos)
 ├── hooks/                   # react-query: useVideos(accountId), useFollowerCounts, useVideoDetail, useVideoHistory,
-│                            #   useAccountInsights, usePlatformAccounts, useCompetitors, useStrategy, useDashboardData; useMediaQuery (useIsMobile)
+│                            #   useAccountInsights, usePlatformAccounts, useCompetitors, useStrategy (perfil + guardar), useCoach (último
+│                            #   análisis de IA por tipo, creadores sugeridos), useDashboardData; useMediaQuery (useIsMobile)
 ├── components/              # ui.tsx (kit: tokens, Icon, Button, Card, Skeleton, Callout, Toast…), ai.tsx (AiPanel, AiProgress, FeedbackView,
-│                            #   EvidenceChip, LiftBar), Layout (header + nav inferior en celular), StatCard, PlatformFilter, VideoList/Row, IdeaCard, charts
-├── pages/                   # Videos, VideoDetail, Insights ("Qué funciona"), Audience, Competition, Strategy, Accounts, Login
+│                            #   EvidenceChip, LiftBar), coach.tsx (TipsView, DiagnosisView, CacheMeta), ListEditor, Layout (header + nav
+│                            #   inferior en celular), StatCard, PlatformFilter, VideoList/Row, IdeaCard, charts
+├── pages/                   # Videos, VideoDetail, Insights ("Qué funciona" + consejos), Profile (perfil del creador + diagnóstico),
+│                            #   Audience, Competition (+ creadores sugeridos), Strategy, Accounts, Login
 ├── data/demo.ts             # data de ejemplo (videos, seguidores, insights y patrones) como fallback
 ├── utils/                   # formatters.ts, metrics.ts (adaptador de lib/analysis), accounts.ts
 ├── Dashboard.tsx            # Resumen (orquesta stats y gráficos)
@@ -113,19 +117,24 @@ src/
 └── main.tsx                 # Entry point (SIN imports de CSS)
 
 lib/                         # compartido front + backend (imports con extensión .js)
+├── ai/                      # client (ÚNICO punto de llamada a Anthropic vía @anthropic-ai/sdk: callStructured/callText/postMessages, system
+│                            #   con cache_control), cache (ai_analyses: hash de entradas + TTL + force; withAiCache); __tests__/mockAnthropic (mock)
 ├── ingest/                  # fetchers normalizados (instagram, youtube, tiktok + extras/analytics), persist, sync, tokens
 ├── analysis/                # metrics, scoring, patterns, diagnostics, alerts, benchmarks, report, pipeline (funciones puras + tests)
 ├── video-analysis/          # schema (zod), prompts, ffmpeg utils, analyze (Claude tool use), queue
-├── competitors/             # fetch (Business Discovery / YouTube pública), metrics, niche (temas + oportunidades), reference, sync
-├── strategy/                # types, validate (reglas duras), predict, calendar, generate, persist (+ loop de aprendizaje)
+├── competitors/             # fetch (Business Discovery / YouTube pública), metrics, niche (temas + oportunidades), trending (posts calientes,
+│                            #   hashtags en alza), suggest (creadores del nicho: búsqueda YouTube + IA "a verificar"), reference, sync
+├── strategy/                # types (StrategyProfile, completitud, foco vigente), profileRow (fila ↔ perfil), validate (reglas duras), predict,
+│                            #   calendar, generate, tips (consejos con evidencia), profile (diagnóstico del creador), persist (+ loop de aprendizaje)
 ├── server/auth.ts           # JWT de Supabase en endpoints, state firmado de OAuth
-└── handlers/                # lógica de cada endpoint (las funciones de api/ son solo dispatchers)
+└── handlers/                # lógica de cada endpoint (las funciones de api/ son solo dispatchers); coachContext carga perfil + patrones +
+                             #   tendencias + benchmark una sola vez para estrategia, consejos, diagnóstico y creadores
 
 api/                         # 5 funciones de Vercel (el plan Hobby limita a 12)
 ├── cron/[job].ts            # sync | daily | analyze | refresh-tokens | competitors
 ├── auth/[provider]/{index,callback}.ts   # OAuth Instagram / YouTube
 ├── tiktok/[action].ts       # upload (userscript) | token | manual
-└── actions/[action].ts      # sync-now | niche | reference | strategy | script | feedback
+└── actions/[action].ts      # sync-now | niche | reference | strategy | script | feedback | profile | tips | suggest-creators
 
 worker/                      # análisis de video (Docker: ffmpeg, yt-dlp, faster-whisper, tesseract) — fuera de Vercel
 scripts/                     # sync.ts (manual), seed-eiz-account.ts, tiktok-userscript.user.js
@@ -153,7 +162,10 @@ vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites 
 - **Sin Tailwind**: Inline styles para mantener todo autocontenido.
 - **Una sola implementación de ingesta**: `lib/ingest/*` la usan el cron, el script manual y los endpoints. Nada de lógica duplicada.
 - **Crons una vez por día** (plan Hobby): `sync` y `daily`. Los comentarios viejos de "cada 6hs" ya no aplican.
-- **El LLM narra, el código calcula**: cifras, scores, lifts, reglas del `dont_list` y capacidad de posteo se validan en código.
+- **El LLM narra, el código calcula**: cifras, scores, lifts, reglas del `dont_list` y capacidad de posteo se validan en código. Los consejos y el diagnóstico citan evidencia por id; los ids inventados se descartan y el punto queda como "hipótesis".
+- **Una sola llamada a la IA por dato nuevo**: toda llamada pasa por `lib/ai/client.ts` (SDK oficial; en tests se mockea `fetch` con `lib/ai/__tests__/mockAnthropic.ts`) y se guarda en `ai_analyses` con el hash de sus entradas (perfil, patrones, hashtags, guion…). Si el hash coincide y no venció el TTL, se reutiliza y no se pega al endpoint. El usuario puede forzar con "Regenerar" (`force: true`). Además el bloque estable del system (identidad + reglas + instrucción de la herramienta) va con `cache_control` (prompt caching): solo aplica si el prefijo supera el mínimo cacheable del modelo (≈1K tokens); `AiUsage.cacheReadTokens` dice si se aprovechó.
+- **El perfil lo define el usuario, no el código**: nada en prompts ni análisis asume que el creador es EIZ ni de qué nicho es; todo sale de `account_profiles` (`describeCreator`). El "foco actual" tiene fecha de vencimiento y lo vencido se ignora solo.
+- **Creadores sugeridos sin scraping**: YouTube por la Data API pública (verificado); Instagram/TikTok los propone la IA y quedan marcados "a verificar" hasta que el sync oficial los confirme.
 - **Degradación elegante**: sin migraciones aplicadas o sin base, el dashboard muestra data de ejemplo y la ingesta no rompe.
 
 ## Roadmap
@@ -216,6 +228,7 @@ vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites 
 - [x] Fase E: pipeline de análisis de video (worker Docker) — falta desplegar el worker
 - [x] Fase F: competencia y nicho
 - [x] Fase G: estrategia (ideas con evidencia, guiones, calendario, feedback, loop de aprendizaje)
+- [x] Fase H: perfil del creador configurable (pantalla "Perfil"), diagnóstico del creador, consejos de contenido (patrones propios + tendencias de la competencia + benchmark), creadores sugeridos del nicho, caché de análisis de IA (`ai_analyses`)
 - [ ] Pendientes que dependen de credenciales/DB/deploy: ver `docs/ESTADO_V2.md`
 
 ### Futuro

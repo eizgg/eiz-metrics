@@ -7,6 +7,9 @@ import { useToast } from '../context/ToastContext'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import { apiPost } from '../lib/api'
 import { useAddCompetitor, useCompetitors, useNicheAnalysis, useReferenceVideos } from '../hooks/useCompetitors'
+import { useCreatorSuggestions } from '../hooks/useCoach'
+import { Link } from 'react-router-dom'
+import { useBasePath } from '../components/Layout'
 import { useAttributeLift } from '../hooks/useAccountInsights'
 import { compareReference, describeComparison } from '../../lib/competitors/reference'
 import { useDashboardVideos } from '../hooks/useDashboardData'
@@ -18,6 +21,7 @@ import type { Competitor } from '../types/insights'
 const POSITION_COLOR = { debajo: COLORS.bad, dentro: COLORS.warn, arriba: COLORS.good }
 const POSITION_LABEL = { debajo: 'por debajo', dentro: 'en rango', arriba: 'por encima' }
 const NICHE_STEPS = ['Leyendo los posteos recientes de la competencia', 'Agrupando temas', 'Comparando con lo que vos publicás']
+const SUGGEST_STEPS = ['Buscando canales de tu nicho en YouTube', 'Pidiendo cuentas comparables a la IA', 'Filtrando por tamaño y descartando las que ya seguís']
 
 export function CompetitionPage() {
   const { accountId } = useAccount()
@@ -30,6 +34,9 @@ export function CompetitionPage() {
   const client = useQueryClient()
   const { niche } = useNicheAnalysis(accountId)
   const { references } = useReferenceVideos(accountId)
+  const { suggestions, setStatus: setSuggestionStatus, addAsCompetitor } = useCreatorSuggestions(accountId)
+  const base = useBasePath()
+  const [suggestNote, setSuggestNote] = useState<string | null>(null)
   const { data: lifts } = useAttributeLift(accountId)
   const [busy, setBusy] = useState<string | null>(null)
   const [refUrl, setRefUrl] = useState('')
@@ -54,6 +61,25 @@ export function CompetitionPage() {
     const band = erBenchmark(total)
     return { total, er, band, position: erPosition(er, band) }
   }, [followers, videos])
+
+  async function suggestCreators(force: boolean) {
+    setBusy('suggest')
+    setSuggestNote(null)
+    const { data, error } = await apiPost<{ cached: boolean; suggestions: unknown[]; errors: string[] }>('/api/actions/suggest-creators', { accountId, force })
+    if (error) toast.push('error', error)
+    else {
+      if (data?.errors?.length) setSuggestNote(data.errors.join(' · '))
+      toast.push('success', data?.cached ? 'Tu perfil no cambió: se muestran las sugerencias guardadas.' : `${data?.suggestions.length ?? 0} creadores sugeridos`)
+    }
+    await client.invalidateQueries()
+    setBusy(null)
+  }
+
+  async function adopt(s: (typeof suggestions)[number]) {
+    const err = await addAsCompetitor(s)
+    if (err) toast.push('error', err)
+    else toast.push('success', `@${s.handle} agregado como competidor. Se valida con la API oficial en el próximo sync.`)
+  }
 
   async function onAdd(e: FormEvent) {
     e.preventDefault()
@@ -126,6 +152,51 @@ export function CompetitionPage() {
           </div>
         </Card>
       )}
+
+      <AiPanel
+        title="Creadores parecidos a vos"
+        meta="Cuentas de tu nicho y tamaño para seguir como competencia o referencia. YouTube sale de la API pública (verificado); Instagram y TikTok los sugiere la IA y hay que verificarlos."
+        actions={
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Button size="sm" variant={suggestions.length > 0 ? 'ghost' : 'primary'} icon="sparkle" loading={busy === 'suggest'} disabled={busy !== null || !accountId} onClick={() => void suggestCreators(false)}>
+              {suggestions.length > 0 ? 'Buscar más' : 'Buscar creadores'}
+            </Button>
+            {suggestions.length > 0 && <Button size="sm" variant="ghost" icon="refresh" disabled={busy !== null || !accountId} title="Vuelve a buscar aunque el perfil no haya cambiado" onClick={() => void suggestCreators(true)}>Regenerar</Button>}
+          </div>
+        }
+        footnote={suggestions.length > 0 ? 'Las sugerencias de la IA pueden tener el handle mal o no existir: al agregarlas, el sync semanal las valida contra la API oficial y marca el error si no existen.' : null}
+      >
+        {busy === 'suggest' ? (
+          <AiProgress steps={SUGGEST_STEPS} label="Buscando creadores" stepSeconds={5} />
+        ) : suggestions.filter((s) => s.status === 'sugerido').length === 0 ? (
+          <div style={{ color: COLORS.dim, fontSize: 13, lineHeight: 1.55 }}>
+            {suggestions.length > 0 ? 'Ya trabajaste todas las sugerencias. Buscá más cuando quieras.' : <>Se basa en el nicho, la región y los pilares de tu <Link to={`${base}/profile`} style={{ color: COLORS.primaryLight }}>perfil</Link>. Cuanto más completo, mejores las sugerencias.</>}
+            {suggestNote && <div style={{ marginTop: 8, color: COLORS.warn }}>{suggestNote}</div>}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {suggestNote && <div style={{ fontSize: 12, color: COLORS.warn }}>{suggestNote}</div>}
+            {suggestions.filter((s) => s.status === 'sugerido').map((s) => (
+              <div key={s.id} style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0, 1fr) auto', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 10, border: `1px solid ${COLORS.cardBorder}`, background: 'rgba(168,85,247,0.04)' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 14 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: PLATFORM_COLORS[s.platform], flexShrink: 0 }} title={PLATFORM_LABELS[s.platform]} />
+                    {s.url ? <a href={s.url} target="_blank" rel="noreferrer" style={{ color: COLORS.text, fontWeight: 600, textDecoration: 'none' }}>@{s.handle}</a> : <span style={{ fontWeight: 600 }}>@{s.handle}</span>}
+                    {s.name && <span style={{ color: COLORS.dim, fontSize: 13 }}>{s.name}</span>}
+                    {s.followers !== null && <span style={{ fontFamily: MONO, fontSize: 12, color: COLORS.muted }}>{formatNumber(s.followers)} seg.</span>}
+                    <Pill color={s.verified ? COLORS.good : COLORS.warn} icon={s.verified ? 'check' : 'alert'}>{s.verified ? 'verificado' : 'a verificar'}</Pill>
+                  </div>
+                  {s.reason && <div style={{ fontSize: 12.5, color: COLORS.textSoft, marginTop: 4, lineHeight: 1.5 }}>{s.reason}</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <Button size="sm" icon="plus" onClick={() => void adopt(s)}>Seguir</Button>
+                  <Button size="sm" variant="ghost" ariaLabel={`Descartar @${s.handle}`} onClick={() => void setSuggestionStatus(s.id, 'descartado')}><Icon name="x" size={14} /></Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </AiPanel>
 
       <Card title="Cargar competidor" icon="link">
         <form onSubmit={(e) => void onAdd(e)} style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '160px 1fr 200px auto', gap: 10, alignItems: 'end' }}>
