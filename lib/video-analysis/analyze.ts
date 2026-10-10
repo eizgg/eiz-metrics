@@ -2,6 +2,7 @@
 
 import type Anthropic from '@anthropic-ai/sdk'
 import { postMessages, resolveModel, systemBlocks } from '../ai/client.js'
+import { effortConfig } from '../anthropic-model.js'
 import type { AiOptions } from '../ai/client.js'
 import { ANALYSIS_TOOL_NAME, analysisJsonSchema, videoAnalysisSchema } from './schema.js'
 import type { VideoAnalysis } from './schema.js'
@@ -45,7 +46,7 @@ export function buildRequestBody(model: string, frames: FrameImage[], ctx: Analy
     model,
     // El razonamiento adaptativo también consume max_tokens: se deja margen para que no corte el JSON
     max_tokens: 8000,
-    output_config: { effort: 'medium' },
+    ...effortConfig(model),
     // Sonnet 5.5 rechaza tool_choice "tool"/"any" (400): se usa "auto" y se pide la herramienta por nombre.
     // El system es idéntico para todos los videos: con cache_control el prefijo se reutiliza en cada lote.
     system: systemBlocks(`${ANALYST_SYSTEM_PROMPT}\n\nEntregá el análisis SOLO llamando a la herramienta "${ANALYSIS_TOOL_NAME}". No respondas con texto.`),

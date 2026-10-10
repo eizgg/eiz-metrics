@@ -24,7 +24,7 @@ export interface StrategyProfile {
   postingCapacity: number
   timezone: string
   preferredHours: number[]
-  // v2 (migración 0009): el perfil describe a cualquier creador, no solo a EIZ
+  // v2 (migración 0010): el perfil describe a cualquier creador, no solo a EIZ
   niche: string | null
   region: string | null
   language: string | null

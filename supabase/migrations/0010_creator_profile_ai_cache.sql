@@ -1,4 +1,4 @@
--- 0009 — Perfil del creador configurable, caché de análisis de IA y creadores sugeridos del nicho.
+-- 0010 — Perfil del creador configurable, caché de análisis de IA y creadores sugeridos del nicho.
 --
 --  1. account_profiles: el perfil deja de ser "el de EIZ" y pasa a describir a cualquier creador
 --     (nicho, región, idioma, objetivos, foco actual con vencimiento, formatos, referentes).

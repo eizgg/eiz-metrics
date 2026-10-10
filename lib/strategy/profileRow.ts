@@ -1,6 +1,6 @@
 // Mapeo fila de `account_profiles` ↔ StrategyProfile. Lo comparten el backend (persist.ts) y el front
 // (hooks/useStrategy.ts), así hay una sola definición de qué columna alimenta qué campo.
-// Tolera columnas ausentes (migración 0009 sin aplicar): cada campo nuevo cae a su default.
+// Tolera columnas ausentes (migración 0010 sin aplicar): cada campo nuevo cae a su default.
 
 import { emptyProfile } from './types.js'
 import type { FocusItem, ProfilePillar, StrategyProfile } from './types.js'
@@ -48,7 +48,7 @@ export function profileFromRow(r: ProfileRow): StrategyProfile {
   }
 }
 
-// Inverso: lo que el front manda al guardar. `includeV2` en false permite guardar aunque la 0009 no esté aplicada.
+// Inverso: lo que el front manda al guardar. `includeV2` en false permite guardar aunque la 0010 no esté aplicada.
 export function profileToRow(p: StrategyProfile, includeV2 = true): ProfileRow {
   const row: ProfileRow = {
     bio: p.bio,

@@ -22,13 +22,15 @@ export interface CompetitorSyncSummary {
 async function ownInstagramCredentials(supabase: SupabaseClient, accountId: string): Promise<{ igUserId: string; token: string } | null> {
   const { data } = await supabase
     .from('platform_accounts')
-    .select('external_id, platform_credentials(access_token)')
+    .select('external_id, status, platform_credentials(access_token)')
     .eq('account_id', accountId)
     .eq('platform', 'instagram')
     .in('status', ['active', 'error'])
-    .limit(1)
   type Cred = { access_token: string }
-  const row = (data ?? [])[0] as { external_id: string; platform_credentials: Cred | Cred[] | null } | undefined
+  type Row = { external_id: string; status: string; platform_credentials: Cred | Cred[] | null }
+  // Si hay varias conexiones, se prefiere una activa: una en error puede tener el token vencido
+  const rows = (data ?? []) as Row[]
+  const row = rows.find((r) => r.status === 'active') ?? rows[0]
   const token = firstEmbedded(row?.platform_credentials)?.access_token
   return row && token ? { igUserId: row.external_id, token } : null
 }

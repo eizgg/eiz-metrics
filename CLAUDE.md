@@ -72,7 +72,8 @@ create table public.follower_counts (
 | 0006 | Fase E: `analysis_jobs` + `claim_analysis_job()` (cola atómica), bucket de Storage `video-inputs` |
 | 0007 | Fase F: `competitors`, `competitor_snapshots`, `reference_videos` |
 | 0008 | Fase G: `account_profiles` (sembrado con el perfil de EIZ), `content_ideas`, `content_scripts`, `content_calendar` |
-| 0009 | Perfil del creador configurable (`niche`, `region`, `language`, `goals`, `current_focus` con vencimiento, `content_formats`, `inspirations`); `ai_analyses` (caché de todo lo que genera la IA, con hash de entradas y TTL); `creator_suggestions` (creadores del nicho sugeridos). Quita `ZN` del perfil de EIZ |
+| 0009 | `claim_analysis_job()` recupera jobs `running` abandonados (>30 min): reencola o falla tras 3 intentos |
+| 0010 | Perfil del creador configurable (`niche`, `region`, `language`, `goals`, `current_focus` con vencimiento, `content_formats`, `inspirations`); `ai_analyses` (caché de todo lo que genera la IA, con hash de entradas y TTL); `creator_suggestions` (creadores del nicho sugeridos). Quita `ZN` del perfil de EIZ |
 
 Reglas: todo INSERT de ingesta y análisis va con `service_role`; el front solo lee (y edita `video_content`, `insights`, ideas, competidores propios, su `account_profiles` y el estado de `creator_suggestions`). El código funciona también **antes** de aplicar las migraciones (modo legado: env vars, sin filtro por cuenta, tablas faltantes se ignoran).
 

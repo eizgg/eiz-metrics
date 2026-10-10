@@ -48,7 +48,7 @@ describe('perfil del creador', () => {
     expect(prompt).not.toContain('Promo vieja')
     expect(prompt).not.toContain('trap')
   })
-  it('mapea fila ↔ perfil tolerando columnas ausentes (migración 0009 sin aplicar)', () => {
+  it('mapea fila ↔ perfil tolerando columnas ausentes (migración 0010 sin aplicar)', () => {
     const legacyRow = { bio: 'x', pillars: null, do_list: null, posting_capacity: 4 }
     const p = profileFromRow(legacyRow)
     expect(p.postingCapacity).toBe(4)

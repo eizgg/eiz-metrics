@@ -106,6 +106,10 @@ describe('prompt y request', () => {
     expect(body.system[0].cache_control).toEqual({ type: 'ephemeral' })
     expect(body.messages[0].content.filter((c) => c.type === 'image')).toHaveLength(2)
   })
+  it('buildRequestBody omite effort con modelos que no lo soportan (Haiku)', () => {
+    expect(buildRequestBody('claude-sonnet-5-5', [], ctx)).toHaveProperty('output_config.effort', 'medium')
+    expect(buildRequestBody('claude-haiku-4-5-20251001', [], ctx)).not.toHaveProperty('output_config')
+  })
   it('estimateCost solo con precios configurados', () => {
     expect(estimateCost(1000, 500, {})).toBeNull()
     expect(estimateCost(1_000_000, 500_000, { ANALYSIS_PRICE_IN_PER_MTOK: '3', ANALYSIS_PRICE_OUT_PER_MTOK: '15' })).toBe(10.5)

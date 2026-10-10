@@ -36,7 +36,7 @@ export function useAccountProfile(accountId: string | null) {
       return r ? profileFromRow(r) : null
     },
   })
-  // Guarda el perfil completo (upsert). Si la migración 0009 no está aplicada, reintenta sin las columnas nuevas.
+  // Guarda el perfil completo (upsert). Si la migración 0010 no está aplicada, reintenta sin las columnas nuevas.
   const saveProfile = async (profile: AccountProfile): Promise<string | null> => {
     if (!accountId) return 'No hay cuenta activa'
     const attempt = (includeV2: boolean) =>

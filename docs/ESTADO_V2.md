@@ -21,7 +21,7 @@ Referencia: [`PROMPT_MEJORAS_V2.md`](./PROMPT_MEJORAS_V2.md).
 | E — Análisis de video | 🟡 Pipeline y worker escritos y testeados en sus partes puras | Desplegar el worker; probar con un video real |
 | F — Competencia y nicho | ✅ En código, con tests | Cargar competidores; probar Business Discovery con el token real |
 | G — Estrategia | ✅ En código, con tests | Primera generación real (necesita `ANTHROPIC_API_KEY`, perfil y datos) |
-| H — Perfil del creador, coach y caché de IA | ✅ En código, con tests | Aplicar 0009; completar el perfil desde la pantalla "Perfil"; `YOUTUBE_API_KEY` para la búsqueda de creadores |
+| H — Perfil del creador, coach y caché de IA | ✅ En código, con tests | Aplicar 0010; completar el perfil desde la pantalla "Perfil"; `YOUTUBE_API_KEY` para la búsqueda de creadores |
 
 ## Qué se hizo (por bug del diagnóstico 1.2)
 
@@ -57,8 +57,8 @@ Otras decisiones tomadas por su cuenta:
 2. Aplicar `supabase/migrations/0001` y `0002` (SQL Editor, en orden).
 3. `npx tsx scripts/seed-eiz-account.ts --email tu@mail.com` (crea el account EIZ, mueve credenciales del `.env`, hace
    backfill y **imprime un token de subida de TikTok una sola vez**).
-4. Aplicar `0003` (falla a propósito si quedan filas sin `platform_account_id`), luego `0004`–`0009`.
-   La 0009 quita `ZN` del audio propio del perfil sembrado de EIZ: después hay que cargar el perfil real desde la pantalla "Perfil"
+4. Aplicar `0003` (falla a propósito si quedan filas sin `platform_account_id`), luego `0004`–`0010`.
+   La 0010 quita `ZN` del audio propio del perfil sembrado de EIZ: después hay que cargar el perfil real desde la pantalla "Perfil"
    (nicho, región, objetivos, foco actual con fecha, formatos, referentes).
 5. Verificar en la base real el `check` de `videos.platform` (¿alguna vez se amplió para `youtube_shorts`?). La 0001 lo
    reemplaza igual.

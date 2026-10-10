@@ -5,6 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import { supportsEffort } from '../anthropic-model.js'
 
 export const DEFAULT_MODEL = 'claude-sonnet-5-5'
 
@@ -114,7 +115,8 @@ export async function callStructured<T extends z.ZodType>(params: StructuredPara
       model: resolveModel(options),
       // El razonamiento adaptativo también consume max_tokens: se deja margen para que no corte el JSON
       max_tokens: params.maxTokens ?? 16000,
-      output_config: { effort: params.effort ?? 'medium' },
+      // Haiku no soporta effort (400): se omite
+      ...(supportsEffort(resolveModel(options)) ? { output_config: { effort: params.effort ?? 'medium' } } : {}),
       system: systemBlocks(system),
       tools: [{ name: params.toolName, description: 'Devuelve el resultado estructurado', input_schema: z.toJSONSchema(params.schema) as Anthropic.Tool.InputSchema }],
       tool_choice: { type: 'auto' },
