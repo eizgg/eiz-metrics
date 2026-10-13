@@ -2,6 +2,8 @@
 // (el LLM agrupa; el conteo y el ER los calcula el código) y arma las oportunidades.
 
 import { median } from '../analysis/metrics.js'
+import { callText, hasApiKey } from '../ai/client.js'
+import type { AiOptions } from '../ai/client.js'
 import type { ThemeStat } from './metrics.js'
 import { findOpportunities, hashtagFrequency } from './metrics.js'
 import type { CompetitorPost } from './types.js'
@@ -21,10 +23,6 @@ export function fallbackThemes(freq: Map<string, number>, limit = 10): Theme[] {
     .map(([h]) => ({ name: h, hashtags: [h] }))
 }
 
-interface MessagesResponse {
-  content?: Array<{ type: string; text?: string }>
-}
-
 // Parsea la respuesta del modelo: descarta hashtags inventados y temas vacíos
 export function parseThemes(text: string, allowed: Set<string>): Theme[] {
   const start = text.indexOf('[')
@@ -42,25 +40,25 @@ export function parseThemes(text: string, allowed: Set<string>): Theme[] {
   }
 }
 
-export async function groupThemes(freq: Map<string, number>, options: { apiKey?: string; model?: string } = {}): Promise<Theme[]> {
-  const apiKey = options.apiKey ?? process.env.ANTHROPIC_API_KEY
+export interface GroupThemesOptions extends AiOptions {
+  // Quién es el creador ("creador de contenido de trap/urbano de Argentina"): orienta el agrupado
+  creatorDescription?: string
+}
+
+export async function groupThemes(freq: Map<string, number>, options: GroupThemesOptions = {}): Promise<Theme[]> {
   const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_HASHTAGS_FOR_LLM)
-  if (!apiKey || top.length < 3) return fallbackThemes(freq)
+  if (!hasApiKey(options) || top.length < 3) return fallbackThemes(freq)
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: options.model ?? process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5',
-        max_tokens: 1500,
-        system: 'Agrupás hashtags de la escena trap/urbana argentina en 8 a 12 temas de contenido. Respondé SOLO con un JSON array: [{"name": "tema en 2-4 palabras", "hashtags": ["..."]}]. Usá únicamente hashtags de la lista recibida, sin inventar ninguno.',
-        messages: [{ role: 'user', content: top.map(([h, n]) => `${h} (${n})`).join('\n') }],
-      }),
-    })
-    if (!res.ok) return fallbackThemes(freq)
-    const data = (await res.json()) as MessagesResponse
-    const text = data.content?.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('') ?? ''
+    const who = options.creatorDescription ?? 'creador de contenido'
+    const { text } = await callText(
+      {
+        system: `Agrupás hashtags del nicho de un ${who} en 8 a 12 temas de contenido. Respondé SOLO con un JSON array: [{"name": "tema en 2-4 palabras", "hashtags": ["..."]}]. Usá únicamente hashtags de la lista recibida, sin inventar ninguno.`,
+        user: top.map(([h, n]) => `${h} (${n})`).join('\n'),
+        maxTokens: 1500,
+      },
+      options
+    )
     const themes = parseThemes(text, new Set(top.map(([h]) => h)))
     return themes.length >= 3 ? themes : fallbackThemes(freq)
   } catch {

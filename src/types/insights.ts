@@ -52,15 +52,19 @@ export interface ContentIdea {
   videoId: string | null
 }
 
-export interface AccountProfile {
-  bio: string | null
-  voice: string | null
-  pillars: Array<{ name: string; description: string; weight: number }>
-  audienceDescription: string | null
-  doList: string[]
-  dontList: string[]
-  ownAudio: string[]
-  postingCapacity: number
-  timezone: string
-  preferredHours: number[]
+// El perfil del creador se define una sola vez en lib/strategy/types.ts (lo comparten front y backend)
+export type { StrategyProfile as AccountProfile, FocusItem, ProfilePillar } from '../../lib/strategy/types'
+
+export interface CreatorSuggestionRow {
+  id: string
+  platform: 'instagram' | 'tiktok' | 'youtube'
+  handle: string
+  name: string | null
+  reason: string | null
+  source: 'youtube_search' | 'ia'
+  followers: number | null
+  url: string | null
+  verified: boolean
+  status: 'sugerido' | 'agregado' | 'descartado'
+  createdAt: string
 }

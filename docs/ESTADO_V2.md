@@ -1,6 +1,6 @@
 # Estado de la v2 — qué está hecho y qué queda pendiente
 
-Última actualización: 2026-09-30 · Rama `feature/tiktok-integration`.
+Última actualización: 2026-10-07 · Rama `feature/creator-profile-ai-cache`.
 Referencia: [`PROMPT_MEJORAS_V2.md`](./PROMPT_MEJORAS_V2.md).
 
 > **Contexto de la ejecución:** la cuenta de Supabase estaba bloqueada por inactividad y, además, el entorno de
@@ -21,6 +21,7 @@ Referencia: [`PROMPT_MEJORAS_V2.md`](./PROMPT_MEJORAS_V2.md).
 | E — Análisis de video | 🟡 Pipeline y worker escritos y testeados en sus partes puras | Desplegar el worker; probar con un video real |
 | F — Competencia y nicho | ✅ En código, con tests | Cargar competidores; probar Business Discovery con el token real |
 | G — Estrategia | ✅ En código, con tests | Primera generación real (necesita `ANTHROPIC_API_KEY`, perfil y datos) |
+| H — Perfil del creador, coach y caché de IA | ✅ En código, con tests | Aplicar 0010; completar el perfil desde la pantalla "Perfil"; `YOUTUBE_API_KEY` para la búsqueda de creadores |
 
 ## Qué se hizo (por bug del diagnóstico 1.2)
 
@@ -56,7 +57,9 @@ Otras decisiones tomadas por su cuenta:
 2. Aplicar `supabase/migrations/0001` y `0002` (SQL Editor, en orden).
 3. `npx tsx scripts/seed-eiz-account.ts --email tu@mail.com` (crea el account EIZ, mueve credenciales del `.env`, hace
    backfill y **imprime un token de subida de TikTok una sola vez**).
-4. Aplicar `0003` (falla a propósito si quedan filas sin `platform_account_id`), luego `0004`–`0009`.
+4. Aplicar `0003` (falla a propósito si quedan filas sin `platform_account_id`), luego `0004`–`0010`.
+   La 0010 quita `ZN` del audio propio del perfil sembrado de EIZ: después hay que cargar el perfil real desde la pantalla "Perfil"
+   (nicho, región, objetivos, foco actual con fecha, formatos, referentes).
 5. Verificar en la base real el `check` de `videos.platform` (¿alguna vez se amplió para `youtube_shorts`?). La 0001 lo
    reemplaza igual.
 6. La rama `storage` de la 0006 (bucket `video-inputs` + policy) no se pudo probar en PGlite (no tiene el esquema
@@ -93,7 +96,20 @@ Desplegar `worker/` (Fly.io / Railway) con `VITE_SUPABASE_URL`, `SUPABASE_SERVIC
 Opcional: `ANALYSIS_PRICE_IN_PER_MTOK` / `ANALYSIS_PRICE_OUT_PER_MTOK` para registrar costo en `analysis_jobs`.
 Probar con 1–2 videos antes del lote de los 20 más vistos. Nunca se automatiza la descarga de videos de terceros.
 
-### 8. Limitaciones conocidas
+### 8. Fase H (perfil, coach, caché): qué revisar con datos reales
+- `ai_analyses` se llena desde los endpoints `profile`, `tips`, `suggest-creators`, `strategy`, `script`, `feedback`, `niche` y el reporte
+  semanal del cron. Verificar en la base que `cached: true` aparece al repetir una acción sin cambiar datos.
+- Las "tendencias del nicho" salen de `competitor_snapshots.recent_posts` (último snapshot): necesitan competidores cargados y al
+  menos un cron semanal corrido. Sin eso, consejos e ideas solo usan patrones propios y benchmark.
+- La búsqueda de creadores en YouTube gasta 100 unidades de cuota por consulta (hasta 3 consultas por corrida; la caché evita
+  repetirla si el perfil no cambió). Las sugerencias de IA para Instagram/TikTok son nombres que el modelo conoce: pueden no
+  existir; al agregarlas como competidor el sync las valida y deja el error en `competitor_snapshots`/respuesta del cron.
+- El diagnóstico exige el perfil al menos al 30%; los consejos exigen 2 evidencias (patrones, tendencias, benchmark u horarios).
+- El cliente usa `@anthropic-ai/sdk` con `cache_control` en el system. Con un perfil corto el prefijo queda por debajo del mínimo
+  cacheable (~1K tokens en Sonnet) y el caching de prompts no aplica (silencioso, sin error); revisar `cacheReadTokens` en el uso
+  que devuelven los endpoints si se quiere medir. La caché real de resultados es `ai_analyses`, que sí evita la llamada entera.
+
+### 9. Limitaciones conocidas
 - Instagram no expone la **duración** del Reel por API: `retention_pct` de IG solo se calcula cuando el worker completa
   `duration_seconds`.
 - Los diagnósticos "reach alto + engagement bajo" usan el índice de views como proxy del reach.

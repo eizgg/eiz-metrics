@@ -5,6 +5,8 @@ import type { AttributeLift } from './patterns.js'
 import type { Diagnostic } from './diagnostics.js'
 import type { Alert } from './alerts.js'
 import type { AnalysisVideo, VideoScore } from './types.js'
+import { callText, hasApiKey } from '../ai/client.js'
+import type { AiOptions } from '../ai/client.js'
 
 export interface ReportFacts {
   periodStart: string
@@ -74,31 +76,31 @@ export function renderReportMarkdown(facts: ReportFacts): string {
   return lines.join('\n')
 }
 
-const NARRATION_SYSTEM = `Sos el analista de contenido de un artista de trap/urbano argentino.
-Vas a redactar un reporte semanal corto en español rioplatense (voseo), directo, sin humo y sin emojis.
+function narrationSystem(creatorDescription: string): string {
+  return `Sos el analista de contenido de un ${creatorDescription}.
+Vas a redactar un reporte semanal corto en español (voseo rioplatense si el creador es de Argentina; si no, español neutro), directo, sin humo y sin emojis.
 REGLAS: (1) usá EXCLUSIVAMENTE las cifras, nombres y evidencias del JSON que te paso; nunca inventes ni redondees a otra cosa;
 (2) mantené dos secciones fijas: "### Seguí por acá" y "### Ajustá esto"; (3) cada punto debe tener su evidencia y una acción concreta;
 (4) si no hay datos suficientes, decilo en vez de rellenar. Devolvé solo markdown.`
+}
 
-export async function narrateReport(facts: ReportFacts, options: { apiKey?: string; model?: string } = {}): Promise<string> {
-  const apiKey = options.apiKey ?? process.env.ANTHROPIC_API_KEY
+export interface NarrateOptions extends AiOptions {
+  creatorDescription?: string
+}
+
+export async function narrateReport(facts: ReportFacts, options: NarrateOptions = {}): Promise<string> {
   const fallback = renderReportMarkdown(facts)
-  if (!apiKey) return fallback
+  if (!hasApiKey(options)) return fallback
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: options.model ?? process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5',
-        max_tokens: 1200,
-        system: NARRATION_SYSTEM,
-        messages: [{ role: 'user', content: `Datos calculados (JSON):\n${JSON.stringify(facts)}\n\nBorrador determinista:\n${fallback}` }],
-      }),
-    })
-    if (!res.ok) return fallback
-    const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> }
-    const text = data.content?.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('\n').trim()
+    const { text } = await callText(
+      {
+        system: narrationSystem(options.creatorDescription ?? 'creador de contenido'),
+        user: `Datos calculados (JSON):\n${JSON.stringify(facts)}\n\nBorrador determinista:\n${fallback}`,
+        maxTokens: 1200,
+      },
+      options
+    )
     return text && text.includes('Seguí por acá') && text.includes('Ajustá esto') ? text : fallback
   } catch {
     return fallback

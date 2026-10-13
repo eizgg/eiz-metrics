@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mockAnthropicText, mockAnthropicTool } from '../../ai/__tests__/mockAnthropic.js'
 import { analyzeVideo, buildRequestBody, estimateCost } from '../analyze.js'
 import { cutsPerMinute, keyframeTimes, onScreenTextRatio, parseFfprobeDuration, parseSceneTimes } from '../ffmpeg.js'
 import { ANALYST_SYSTEM_PROMPT, buildContextText } from '../prompts.js'
@@ -96,12 +97,13 @@ describe('prompt y request', () => {
   it('buildRequestBody arma imágenes, pide la tool por nombre (sin tool_choice forzado) y contexto', () => {
     const body = buildRequestBody('m', [{ timeSeconds: 0, jpegBase64: 'AAA' }, { timeSeconds: 1, jpegBase64: 'BBB' }], ctx) as {
       tool_choice: { type: string }
-      system: string
+      system: Array<{ text: string; cache_control?: { type: string } }>
       messages: Array<{ content: Array<{ type: string }> }>
     }
     // Sonnet 5.5 devuelve 400 con tool_choice "tool"/"any": tiene que ser "auto"
     expect(body.tool_choice.type).toBe('auto')
-    expect(body.system).toContain('"report_video_analysis"')
+    expect(body.system[0].text).toContain('"report_video_analysis"')
+    expect(body.system[0].cache_control).toEqual({ type: 'ephemeral' })
     expect(body.messages[0].content.filter((c) => c.type === 'image')).toHaveLength(2)
   })
   it('buildRequestBody omite effort con modelos que no lo soportan (Haiku)', () => {
@@ -119,17 +121,17 @@ describe('analyzeVideo', () => {
   const ctx = { durationSeconds: 25, caption: null, transcript: null, segments: [], frameTimes: [] }
 
   it('devuelve el análisis validado y el uso de tokens', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'tool_use', name: 'report_video_analysis', input: valid }], usage: { input_tokens: 1200, output_tokens: 400 } }) })))
+    mockAnthropicTool('report_video_analysis', valid, { usage: { input_tokens: 1200, output_tokens: 400 } })
     const r = await analyzeVideo([{ timeSeconds: 0, jpegBase64: 'A' }], ctx, { apiKey: 'k', model: 'm' })
     expect(r.analysis.hook.type).toBe('afirmacion_fuerte')
     expect(r.usage).toMatchObject({ inputTokens: 1200, outputTokens: 400 })
   })
   it('falla si el modelo devuelve algo fuera del schema', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'tool_use', name: 'report_video_analysis', input: { ...valid, format: 'inventado' } }] }) })))
+    mockAnthropicTool('report_video_analysis', { ...valid, format: 'inventado' })
     await expect(analyzeVideo([], ctx, { apiKey: 'k' })).rejects.toThrow(/Análisis inválido/)
   })
   it('falla sin tool_use y sin API key', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text' }] }) })))
+    mockAnthropicText('sin herramienta')
     await expect(analyzeVideo([], ctx, { apiKey: 'k' })).rejects.toThrow(/estructurado/)
     await expect(analyzeVideo([], ctx, { apiKey: '' })).rejects.toThrow(/ANTHROPIC_API_KEY/)
   })

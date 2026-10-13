@@ -29,6 +29,8 @@ class Query implements PromiseLike<Result> {
   private patch: Row = {}
   private onConflict: string[] = []
   private single = false
+  private ordering: Array<{ col: string; asc: boolean }> = []
+  private max: number | null = null
 
   constructor(private db: FakeDb, private table: string) {}
 
@@ -40,8 +42,8 @@ class Query implements PromiseLike<Result> {
   is(col: string, v: unknown) { this.filters.push((r) => (r[col] ?? null) === v); return this }
   in(col: string, vals: unknown[]) { this.filters.push((r) => vals.includes(r[col])); return this }
   maybeSingle() { this.single = true; return this }
-  order() { return this }
-  limit() { return this }
+  order(col: string, opts?: { ascending?: boolean }) { this.ordering.push({ col, asc: opts?.ascending !== false }); return this }
+  limit(n: number) { this.max = n; return this }
 
   private run(): Result {
     if (this.db.missingTables.has(this.table)) return { data: null, error: { code: '42P01', message: `relation ${this.table} does not exist` } }
@@ -62,8 +64,15 @@ class Query implements PromiseLike<Result> {
       this.db.log.push(`${this.op} ${this.table} x${this.payload.length}`)
       return { data: null, error: null }
     }
-    const matched = rows.filter((r) => this.filters.every((f) => f(r)))
+    let matched = rows.filter((r) => this.filters.every((f) => f(r)))
     if (this.op === 'update') { matched.forEach((r) => Object.assign(r, this.patch)); return { data: null, error: null } }
+    for (const o of [...this.ordering].reverse()) {
+      matched = [...matched].sort((a, b) => {
+        const x = a[o.col] as string | number, y = b[o.col] as string | number
+        return (x < y ? -1 : x > y ? 1 : 0) * (o.asc ? 1 : -1)
+      })
+    }
+    if (this.max !== null) matched = matched.slice(0, this.max)
     return { data: this.single ? matched[0] ?? null : matched, error: null }
   }
 

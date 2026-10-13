@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mockAnthropicText } from '../../ai/__tests__/mockAnthropic.js'
 import { fetchInstagramCompetitor, fetchYoutubeCompetitor } from '../fetch.js'
 import { avgEngagementRate, bestPostingSlot, dominantFormat, findOpportunities, hashtagFrequency, postsPerWeek, untriedFormats } from '../metrics.js'
 import type { CompetitorPost } from '../types.js'
@@ -97,10 +98,7 @@ describe('temas del nicho', () => {
     expect((await groupThemes(freq, { apiKey: '' })).length).toBe(4)
   })
   it('groupThemes usa la respuesta del modelo cuando es válida', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ content: [{ type: 'text', text: '[{"name":"A","hashtags":["trap"]},{"name":"B","hashtags":["barrio"]},{"name":"C","hashtags":["zn","plata"]}]' }] }),
-    })))
+    mockAnthropicText('[{"name":"A","hashtags":["trap"]},{"name":"B","hashtags":["barrio"]},{"name":"C","hashtags":["zn","plata"]}]')
     const themes = await groupThemes(freq, { apiKey: 'k' })
     vi.unstubAllGlobals()
     expect(themes.map((t) => t.name)).toEqual(['A', 'B', 'C'])
