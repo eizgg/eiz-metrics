@@ -41,6 +41,7 @@ class Query implements PromiseLike<Result> {
   eq(col: string, v: unknown) { this.filters.push((r) => r[col] === v); return this }
   is(col: string, v: unknown) { this.filters.push((r) => (r[col] ?? null) === v); return this }
   in(col: string, vals: unknown[]) { this.filters.push((r) => vals.includes(r[col])); return this }
+  gte(col: string, v: string | number) { this.filters.push((r) => (r[col] as string | number) >= v); return this }
   maybeSingle() { this.single = true; return this }
   order(col: string, opts?: { ascending?: boolean }) { this.ordering.push({ col, asc: opts?.ascending !== false }); return this }
   limit(n: number) { this.max = n; return this }

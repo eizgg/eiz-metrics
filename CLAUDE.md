@@ -127,10 +127,12 @@ lib/                         # compartido front + backend (imports con extensió
 ├── strategy/                # types (StrategyProfile, completitud, foco vigente), profileRow (fila ↔ perfil), validate (reglas duras), predict,
 │                            #   calendar, generate, tips (consejos con evidencia), profile (diagnóstico del creador), persist (+ loop de aprendizaje)
 ├── server/auth.ts           # JWT de Supabase en endpoints, state firmado de OAuth
+├── mcp/                     # servidor MCP de solo lectura (scope por token + cuenta, lecturas, herramientas) — ver docs/MCP.md
 └── handlers/                # lógica de cada endpoint (las funciones de api/ son solo dispatchers); coachContext carga perfil + patrones +
                              #   tendencias + benchmark una sola vez para estrategia, consejos, diagnóstico y creadores
 
-api/                         # 5 funciones de Vercel (el plan Hobby limita a 12)
+api/                         # 6 funciones de Vercel (el plan Hobby limita a 12)
+├── mcp.ts                   # conector MCP para claude.ai (Bearer MCP_TOKEN)
 ├── cron/[job].ts            # sync | daily | analyze | refresh-tokens | competitors
 ├── auth/[provider]/{index,callback}.ts   # OAuth Instagram / YouTube
 ├── tiktok/[action].ts       # upload (userscript) | token | manual
@@ -139,7 +141,7 @@ api/                         # 5 funciones de Vercel (el plan Hobby limita a 12)
 worker/                      # análisis de video (Docker: ffmpeg, yt-dlp, faster-whisper, tesseract) — fuera de Vercel
 scripts/                     # sync.ts (manual), seed-eiz-account.ts, tiktok-userscript.user.js
 supabase/migrations/         # SQL versionado
-docs/                        # PROMPT_MEJORAS_V2.md, ESTADO_V2.md, UX_UI_REVIEW.md, tiktok-endpoints.md
+docs/                        # PROMPT_MEJORAS_V2.md, ESTADO_V2.md, UX_UI_REVIEW.md, tiktok-endpoints.md, MCP.md
 public/                      # terms.html, privacy.html
 vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites (SPA)
 ```
@@ -166,6 +168,7 @@ vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites 
 - **Una sola llamada a la IA por dato nuevo**: toda llamada pasa por `lib/ai/client.ts` (SDK oficial; en tests se mockea `fetch` con `lib/ai/__tests__/mockAnthropic.ts`) y se guarda en `ai_analyses` con el hash de sus entradas (perfil, patrones, hashtags, guion…). Si el hash coincide y no venció el TTL, se reutiliza y no se pega al endpoint. El usuario puede forzar con "Regenerar" (`force: true`). Además el bloque estable del system (identidad + reglas + instrucción de la herramienta) va con `cache_control` (prompt caching): solo aplica si el prefijo supera el mínimo cacheable del modelo (≈1K tokens); `AiUsage.cacheReadTokens` dice si se aprovechó.
 - **El perfil lo define el usuario, no el código**: nada en prompts ni análisis asume que el creador es EIZ ni de qué nicho es; todo sale de `account_profiles` (`describeCreator`). El "foco actual" tiene fecha de vencimiento y lo vencido se ignora solo.
 - **Creadores sugeridos sin scraping**: YouTube por la Data API pública (verificado); Instagram/TikTok los propone la IA y quedan marcados "a verificar" hasta que el sync oficial los confirme.
+- **Conector MCP de solo lectura**: `/api/mcp` expone las mismas cifras del dashboard a los chats de Claude (custom connector con header fijo `Authorization: Bearer <MCP_TOKEN>`). No escribe en la base ni llama a la IA: el chat narra, el código calcula.
 - **Degradación elegante**: sin migraciones aplicadas o sin base, el dashboard muestra data de ejemplo y la ingesta no rompe.
 
 ## Roadmap
@@ -229,6 +232,7 @@ vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites 
 - [x] Fase F: competencia y nicho
 - [x] Fase G: estrategia (ideas con evidencia, guiones, calendario, feedback, loop de aprendizaje)
 - [x] Fase H: perfil del creador configurable (pantalla "Perfil"), diagnóstico del creador, consejos de contenido (patrones propios + tendencias de la competencia + benchmark), creadores sugeridos del nicho, caché de análisis de IA (`ai_analyses`)
+- [x] Conector MCP para claude.ai (`/api/mcp`, `docs/MCP.md`) — falta configurar `MCP_TOKEN` en Vercel y agregar el conector
 - [ ] Pendientes que dependen de credenciales/DB/deploy: ver `docs/ESTADO_V2.md`
 
 ### Futuro

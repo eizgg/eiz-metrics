@@ -58,7 +58,7 @@ src/          front (pages, components, hooks, context)
 lib/ingest/   fetchers normalizados + persist + sync (compartido por cron, script y endpoints)
 lib/analysis/ métricas derivadas, scoring, patrones, diagnósticos, alertas, reporte (funciones puras, con tests)
 lib/server/   auth de endpoints y state firmado de OAuth
-api/          funciones de Vercel (cron, OAuth, TikTok, sync manual)
+api/          funciones de Vercel (cron, OAuth, TikTok, sync manual, conector MCP — ver docs/MCP.md)
 scripts/      sync manual, seed de la cuenta, userscript de TikTok
 supabase/     migraciones SQL
 worker/       worker de análisis de video (Docker, fuera de Vercel)
