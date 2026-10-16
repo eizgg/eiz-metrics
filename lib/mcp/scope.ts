@@ -24,6 +24,15 @@ export function tokenMatches(received: string, expected: string): boolean {
   return crypto.timingSafeEqual(a, b)
 }
 
+// Token en la URL (?key=...): para cuentas de claude.ai que todavía no tienen "Request headers" (beta).
+// Un token base64 pegado sin codificar trae '+', que la query decodifica como espacio: se restaura.
+export function queryToken(value: string | string[] | undefined): string | null {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (!raw) return null
+  const token = raw.replace(/ /g, '+')
+  return token.length > 0 ? token : null
+}
+
 export function bearerToken(header: string | string[] | undefined): string | null {
   const value = Array.isArray(header) ? header[0] : header
   if (!value?.startsWith('Bearer ')) return null

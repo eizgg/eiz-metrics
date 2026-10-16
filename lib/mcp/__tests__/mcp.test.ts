@@ -9,7 +9,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { FakeDb } from '../../ingest/__tests__/fakeSupabase.js'
 import { filterVideos, followerTrends, toVideoSummary } from '../data.js'
 import type { VideoSummary } from '../data.js'
-import { resolveScope, tokenMatches, bearerToken } from '../scope.js'
+import { resolveScope, tokenMatches, bearerToken, queryToken } from '../scope.js'
 import type { McpScope } from '../scope.js'
 import { buildMcpServer } from '../server.js'
 
@@ -96,6 +96,9 @@ describe('scope y token', () => {
     expect(bearerToken(undefined)).toBeNull()
     expect(tokenMatches('abc', 'abc')).toBe(true)
     expect(tokenMatches('abc', 'abcd')).toBe(false)
+    expect(queryToken('ab cd=')).toBe('ab+cd=')
+    expect(queryToken(['x'])).toBe('x')
+    expect(queryToken('')).toBeNull()
   })
 
   it('resuelve la cuenta por slug y exige slug si hay varias', async () => {
@@ -254,7 +257,8 @@ describe('endpoint HTTP (Streamable HTTP real)', () => {
       let raw = ''
       req.on('data', (c: Buffer) => { raw += c.toString() })
       req.on('end', () => {
-        const vreq = Object.assign(req, { body: raw ? JSON.parse(raw) as unknown : undefined, query: {}, cookies: {} }) as unknown as VercelRequest
+        const query = Object.fromEntries(new URL(req.url ?? '/', 'http://x').searchParams)
+        const vreq = Object.assign(req, { body: raw ? JSON.parse(raw) as unknown : undefined, query, cookies: {} }) as unknown as VercelRequest
         const vres = Object.assign(res, {
           status(code: number) { res.statusCode = code; return vres },
           json(body: unknown) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); return vres },
@@ -278,6 +282,31 @@ describe('endpoint HTTP (Streamable HTTP real)', () => {
     expect((await fetch(url, { method: 'POST', headers, body })).status).toBe(401)
     expect((await fetch(url, { method: 'POST', headers: { ...headers, Authorization: 'Bearer otro' }, body })).status).toBe(401)
     expect((await fetch(url, { method: 'GET', headers: { Authorization: 'Bearer secreto-de-test' } })).status).toBe(405)
+  })
+
+  it('tools/list directo (sin initialize) responde, como el curl de docs/MCP.md', async () => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer secreto-de-test', 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { result?: { tools: Array<{ name: string }> } }
+    expect(body.result?.tools).toHaveLength(10)
+  })
+
+  it('acepta el token en la URL (?key=) para conectores sin Request headers', async () => {
+    const withKey = new URL(url)
+    withKey.searchParams.set('key', 'secreto-de-test')
+    const transport = new StreamableHTTPClientTransport(withKey)
+    const client = new Client({ name: 'sin-headers', version: '1.0.0' })
+    await client.connect(transport)
+    expect((await client.listTools()).tools.length).toBe(10)
+    await client.close()
+    const wrong = new URL(url)
+    wrong.searchParams.set('key', 'otro')
+    const res = await fetch(wrong, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) })
+    expect(res.status).toBe(401)
   })
 
   it('un cliente MCP real se conecta con el header fijo y llama herramientas', async () => {

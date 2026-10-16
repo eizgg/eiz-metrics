@@ -1,7 +1,8 @@
 /**
  * Servidor MCP (Streamable HTTP, sin estado) para usar EIZ Metrics como conector en claude.ai.
  *
- * Auth: header fijo `Authorization: Bearer <MCP_TOKEN>` (se configura en el conector).
+ * Auth: header fijo `Authorization: Bearer <MCP_TOKEN>` (se configura en el conector) o, si la cuenta de
+ * claude.ai no tiene "Request headers", el token en la URL: `/api/mcp?key=<MCP_TOKEN>`.
  * Alcance: la cuenta de MCP_ACCOUNT_SLUG, o la única que haya. Solo lectura, vía service role.
  * Cada request crea su server + transport: no hay sesiones que mantener entre invocaciones.
  */
@@ -9,7 +10,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { createServiceClient } from '../ingest/sync.js'
-import { bearerToken, resolveScope, tokenMatches } from '../mcp/scope.js'
+import { bearerToken, queryToken, resolveScope, tokenMatches } from '../mcp/scope.js'
 import { buildMcpServer } from '../mcp/server.js'
 
 function rpcError(res: VercelResponse, status: number, message: string) {
@@ -25,7 +26,7 @@ export async function mcpHandler(req: VercelRequest, res: VercelResponse) {
 
   const expected = process.env.MCP_TOKEN
   if (!expected) return rpcError(res, 503, 'MCP_TOKEN no configurado en el servidor')
-  const token = bearerToken(req.headers.authorization)
+  const token = bearerToken(req.headers.authorization) ?? queryToken(req.query?.key)
   if (!token || !tokenMatches(token, expected)) return rpcError(res, 401, 'Unauthorized')
 
   try {

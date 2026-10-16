@@ -29,7 +29,7 @@ Las tablas de migraciones que todavía no se aplicaron se leen como vacías; sin
 
 | Variable | Valor |
 |----------|-------|
-| `MCP_TOKEN` | Un secreto largo. Generalo con `openssl rand -base64 32` |
+| `MCP_TOKEN` | Un secreto largo. Generalo con `openssl rand -hex 32` (Mac/Linux) o, en PowerShell de Windows, con `$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); ($b \| % { $_.ToString('x2') }) -join ''`. En hexadecimal no tiene caracteres que haya que escapar en una URL |
 | `MCP_ACCOUNT_SLUG` | Opcional. Slug de la cuenta a exponer (`accounts.slug`). Si hay una sola cuenta no hace falta |
 
 Además usa `VITE_SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`, que ya están configuradas para los crons.
@@ -52,6 +52,9 @@ Tiene que devolver la lista de herramientas. `401` = token incorrecto; `503` = f
 1. **Settings → Connectors → Add custom connector**.
 2. Nombre: `EIZ Metrics`. URL: `https://<tu-app>.vercel.app/api/mcp`.
 3. Autenticación: **No sign in**, y en **Request headers** agregá `Authorization` = `Bearer <MCP_TOKEN>`.
+   **Si no aparece "Request headers"** (es una beta que no tienen todas las cuentas), poné el token en la URL:
+   `https://<tu-app>.vercel.app/api/mcp?key=<MCP_TOKEN>`. Sin ninguna de las dos, Claude muestra
+   "Problema de conexión… Reconéctate" porque el servidor responde 401.
 4. Guardar. En un chat nuevo, activá el conector desde el menú de herramientas y preguntá, por ejemplo:
    *"¿Qué tipo de reels me funcionaron mejor este mes y qué debería grabar esta semana?"*
 
@@ -60,7 +63,8 @@ custom connector.
 
 ## Seguridad
 
-- El token da lectura a **todos** los datos de la cuenta: no lo compartas ni lo pegues en chats. Para revocarlo,
+- El token da lectura a **todos** los datos de la cuenta: no lo compartas ni lo pegues en chats. Si lo pusiste en la
+  URL (`?key=`), la URL completa del conector es tan secreta como el token. Para revocarlo,
   cambiá `MCP_TOKEN` en Vercel y redeployá (y actualizá el header del conector).
 - El endpoint es de solo lectura: ninguna herramienta escribe en la base.
 - Lee con `service_role` acotado a la cuenta del scope; un video de otra cuenta responde "no existe".
