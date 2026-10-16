@@ -43,7 +43,7 @@ Referencia: [`PROMPT_MEJORAS_V2.md`](./PROMPT_MEJORAS_V2.md).
 
 Otras decisiones tomadas por su cuenta:
 
-- **Funciones de Vercel:** el plan Hobby limita a 12 funciones. Se consolidó en 5 con rutas dinámicas
+- **Funciones de Vercel:** el plan Hobby limita a 12 funciones. Se consolidó en 5 con rutas dinámicas (más `api/mcp`, el conector para claude.ai: 6)
   (`api/cron/[job]`, `api/auth/[provider]/*`, `api/tiktok/[action]`, `api/actions/[action]`). Lógica en `lib/handlers/`.
 - **Crons:** 2 (`sync` 03:00 y `daily` 04:30 UTC; los lunes `daily` también renueva tokens y sincroniza competidores).
   Si tu plan permite más crons, se pueden separar en `vercel.json` (los jobs sueltos siguen expuestos).
