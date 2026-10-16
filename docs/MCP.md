@@ -29,7 +29,7 @@ Las tablas de migraciones que todavía no se aplicaron se leen como vacías; sin
 
 | Variable | Valor |
 |----------|-------|
-| `MCP_TOKEN` | Un secreto largo. Generalo con `openssl rand -base64 32` (Mac/Linux) o, en PowerShell de Windows, con `[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))` |
+| `MCP_TOKEN` | Un secreto largo. Generalo con `openssl rand -base64 32` (Mac/Linux) o, en PowerShell de Windows, con `$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)` |
 | `MCP_ACCOUNT_SLUG` | Opcional. Slug de la cuenta a exponer (`accounts.slug`). Si hay una sola cuenta no hace falta |
 
 Además usa `VITE_SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`, que ya están configuradas para los crons.
