@@ -1,10 +1,11 @@
-// Fuentes oficiales/públicas para competidores. Sin scraping.
+// Fuentes de datos públicos para competidores. Sin scraping propio.
 //  - Instagram: Business Discovery con el token de la cuenta propia (solo cuentas Business/Creator; sin views ajenos)
 //  - YouTube: Data API pública (API key)
-//  - TikTok: sin API → carga manual o snapshot explícito desde el userscript (no hay fetcher)
+//  - TikTok: Scrape Creators (proveedor externo de datos públicos, con créditos; ver scrapeCreators.ts)
 
 import { GRAPH_API_VERSION } from '../ingest/constants.js'
 import { toInt, truncate } from '../ingest/text.js'
+import type { ScrapeCreatorsClient, ScVideo } from './scrapeCreators.js'
 import type { CompetitorFetch, CompetitorPost } from './types.js'
 
 interface DiscoveryResponse {
@@ -81,4 +82,30 @@ export async function fetchYoutubeCompetitor(apiKey: string, handle: string): Pr
     }
   })
   return { followers: toInt(channel.statistics?.subscriberCount), mediaCount: toInt(channel.statistics?.videoCount), posts, externalId: channel.id }
+}
+
+// --- TikTok (Scrape Creators) ---------------------------------------------------------------------------------
+
+export function scVideoToPost(v: ScVideo): CompetitorPost {
+  return {
+    externalId: v.id,
+    type: v.isPhotoPost ? 'carousel' : 'video',
+    publishedAt: v.publishedAt,
+    likes: v.likes,
+    comments: v.comments,
+    views: v.views,
+    caption: v.caption,
+    url: v.url,
+    shares: v.shares,
+    saves: v.saves,
+    durationSeconds: v.durationSeconds,
+    sound: v.sound?.kind ?? null,
+  }
+}
+
+// Últimos ~30 videos (3 créditos: la API devuelve 10 por página). Los seguidores vienen en el autor de cada video.
+export async function fetchTiktokCompetitor(client: ScrapeCreatorsClient, handle: string, maxVideos = 30): Promise<CompetitorFetch> {
+  const { videos, author } = await client.profileVideos(handle, { maxVideos, maxPages: Math.ceil(maxVideos / 10) })
+  if (videos.length === 0 && !author) throw new Error(`TikTok @${handle.replace(/^@/, '')}: sin videos (¿cuenta privada o inexistente?)`)
+  return { followers: author?.followers ?? null, mediaCount: null, posts: videos.map(scVideoToPost), externalId: null }
 }

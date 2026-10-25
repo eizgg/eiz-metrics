@@ -35,6 +35,8 @@ export const FORMAT_SIGNALS: Record<string, RegExp> = {
 export const EXCLUDE_PATTERNS: Array<[string, RegExp]> = [
   ['página de clips/reposteo', /\b(clips?|edits?|repost\w*|fanpage|fans? club|fans?\b|lyrics?|letras de|tv\b|noticias|news|memes? page|paginas?)\b/],
   ['baile', /\b(baile|bailando|dance\w*|dancer|bailarin\w*|coreo\w*)\b/],
+  // Visto en la primera corrida real: medios y políticos aparecen mucho al buscar "barrios del conurbano"
+  ['medio/política', /\b(medio de comunicacion|diario|periodismo|noticias|radio|diputad\w*|senador\w*|concejal\w*|intendent\w*|municipalidad)\b/],
 ]
 
 export function normalizeText(text: string | null | undefined): string {
@@ -97,6 +99,8 @@ export interface RankOptions {
 export interface RankedCandidates {
   reachable: Candidate[]
   references: Candidate[]
+  // Sin seguidores en la búsqueda (la API a veces no los trae): se verifican con el perfil antes de descartarlas
+  unverified: Candidate[]
   discarded: Array<{ handle: string; reason: string }>
 }
 
@@ -106,20 +110,25 @@ function score(c: Candidate): number {
 
 export function rankCandidates(map: Map<string, Candidate>, opts: RankOptions): RankedCandidates {
   const exclude = new Set(opts.exclude.map((h) => h.replace(/^@/, '').toLowerCase()))
-  const out: RankedCandidates = { reachable: [], references: [], discarded: [] }
+  const out: RankedCandidates = { reachable: [], references: [], unverified: [], discarded: [] }
   const big: Candidate[] = []
   for (const c of map.values()) {
     if (exclude.has(c.handle)) continue
     if (c.excludedReason) { out.discarded.push({ handle: c.handle, reason: c.excludedReason }); continue }
     // La región del video/autor es la mejor señal de país que da la API (el parámetro `region` solo mueve el proxy)
     if (c.regions.length > 0 && !c.regions.includes(opts.region)) { out.discarded.push({ handle: c.handle, reason: `región ${c.regions.join('/')}` }); continue }
-    if (c.followers === null) { out.discarded.push({ handle: c.handle, reason: 'sin dato de seguidores' }); continue }
+    if (c.followers === null) {
+      if (c.formatSignals.length > 0) out.unverified.push(c)
+      else out.discarded.push({ handle: c.handle, reason: 'sin seguidores ni señales de formato' })
+      continue
+    }
     if (c.followers < opts.minFollowers) { out.discarded.push({ handle: c.handle, reason: `muy chica (${c.followers})` }); continue }
     if (c.followers > opts.maxFollowers) { big.push(c); continue }
     if (c.formatSignals.length === 0) { out.discarded.push({ handle: c.handle, reason: 'sin señales de formato' }); continue }
     out.reachable.push(c)
   }
   out.reachable.sort((a, b) => score(b) - score(a))
+  out.unverified.sort((a, b) => score(b) - score(a))
   out.references = big.filter((c) => c.formatSignals.length > 0).sort((a, b) => score(b) - score(a)).slice(0, opts.references)
   return out
 }

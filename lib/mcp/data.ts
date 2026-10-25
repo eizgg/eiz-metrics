@@ -6,6 +6,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { engagementRate, retention, saveRate, shareRate } from '../analysis/metrics.js'
 import { ATTRIBUTE_LABELS, topPatterns, weakPatterns } from '../analysis/patterns.js'
 import type { AttributeLift } from '../analysis/patterns.js'
+import { DEFAULT_OUTLIER_OPTIONS, findOutliers } from '../competitors/outliers.js'
+import type { OutlierFeed } from '../competitors/outliers.js'
+import type { OutlierContent } from '../competitors/sync.js'
 import type { CompetitorPost } from '../competitors/types.js'
 import { loadCoachContext } from '../handlers/coachContext.js'
 import type { CoachContext } from '../handlers/coachContext.js'
@@ -441,7 +444,7 @@ export function topPosts(posts: CompetitorPost[], limit: number) {
   return [...posts]
     .sort((a, b) => (b.views ?? b.likes + b.comments) - (a.views ?? a.likes + a.comments))
     .slice(0, limit)
-    .map((p) => ({ type: p.type, publishedAt: p.publishedAt, views: p.views, likes: p.likes, comments: p.comments, caption: p.caption?.slice(0, 300) ?? null }))
+    .map((p) => ({ type: p.type, publishedAt: p.publishedAt, views: p.views, likes: p.likes, comments: p.comments, caption: p.caption?.slice(0, 300) ?? null, url: p.url ?? null }))
 }
 
 export async function loadCompetitors(supabase: SupabaseClient, scope: McpScope) {
@@ -463,6 +466,60 @@ export async function loadCompetitors(supabase: SupabaseClient, scope: McpScope)
         postsPerWeek: num(s?.posts_per_week),
         avgEngagementRatePct: num(s?.avg_engagement_rate),
         topRecentPosts: topPosts(s?.recent_posts ?? [], 5),
+      }
+    }),
+  }
+}
+
+// Outliers de la competencia: se calculan sobre los snapshots ya guardados (0 créditos). El hook, la transcripción y el
+// tipo de sonido salen de reference_videos, que llena el refresh (scripts/competitors.ts refresh / cron de los lunes).
+interface OutlierSnapshotRow { competitor_id: string; recorded_at: string; followers: number | null; recent_posts: CompetitorPost[] | null }
+interface ReferenceRow { url: string; content: OutlierContent | null }
+
+export async function loadCompetitorOutliers(supabase: SupabaseClient, scope: McpScope, args: { windowDays?: number; threshold?: number; handle?: string }, now: Date) {
+  const accountId = requireAccount(scope)
+  const windowDays = args.windowDays ?? DEFAULT_OUTLIER_OPTIONS.windowDays
+  const threshold = args.threshold ?? DEFAULT_OUTLIER_OPTIONS.threshold
+  const handle = args.handle?.replace(/^@/, '').toLowerCase()
+  const all = await rows<CompetitorRow>(supabase.from('competitors').select('id, platform, handle, label').eq('account_id', accountId).eq('active', true), 'competidores')
+  const competitors = all.filter((c) => !handle || c.handle.replace(/^@/, '').toLowerCase() === handle)
+  const criteria = { windowDays, threshold, mainCriterion: 'views / mediana de views de los últimos videos del mismo creador', secondary: 'views / seguidores' }
+  if (competitors.length === 0) return { criteria, outliers: [], note: handle ? `@${handle} no está entre los competidores activos` : 'No hay competidores cargados' }
+  const snaps = await rows<OutlierSnapshotRow>(supabase.from('competitor_snapshots').select('competitor_id, recorded_at, followers, recent_posts').in('competitor_id', competitors.map((c) => c.id)).order('recorded_at', { ascending: false }).limit(competitors.length * 10), 'snapshots')
+  const latest = new Map<string, OutlierSnapshotRow>()
+  for (const s of snaps) if (!latest.has(s.competitor_id)) latest.set(s.competitor_id, s)
+  const feeds: OutlierFeed[] = competitors.flatMap((c) => {
+    const s = latest.get(c.id)
+    return s ? [{ competitorId: c.id, handle: c.handle, platform: c.platform, followers: s.followers, posts: s.recent_posts ?? [] }] : []
+  })
+  const outliers = findOutliers(feeds, now, { windowDays, threshold })
+  const urls = outliers.map((o) => o.url).filter((u): u is string => u !== null)
+  const refs = urls.length > 0 ? await rows<ReferenceRow>(supabase.from('reference_videos').select('url, content').eq('account_id', accountId).in('url', urls), 'videos de referencia') : []
+  const contentByUrl = new Map(refs.map((r) => [r.url, r.content]))
+  const snapshotDates = [...latest.values()].map((s) => s.recorded_at).sort()
+  return {
+    criteria,
+    snapshotsFrom: snapshotDates[0] ?? null,
+    snapshotsTo: snapshotDates[snapshotDates.length - 1] ?? null,
+    outliers: outliers.map((o) => {
+      const content = o.url ? contentByUrl.get(o.url) : undefined
+      return {
+        handle: o.handle,
+        platform: o.platform,
+        url: o.url,
+        publishedAt: o.publishedAt,
+        views: o.views,
+        viewsVsMedian: o.viewsVsMedian,
+        creatorMedianViews: o.creatorMedianViews,
+        viewsVsFollowers: o.viewsVsFollowers,
+        followers: o.followers,
+        durationSeconds: content?.durationSeconds ?? o.durationSeconds,
+        sound: content?.sound.kind ?? o.sound ?? null,
+        soundTitle: content?.sound.title ?? null,
+        caption: content?.caption ?? o.caption,
+        hook: content?.hook.text ?? null,
+        transcript: content?.transcript?.slice(0, 1500) ?? null,
+        enriched: content !== undefined && content !== null,
       }
     }),
   }

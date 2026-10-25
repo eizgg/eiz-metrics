@@ -214,16 +214,25 @@ export function createScrapeCreatorsClient(opts: ScrapeCreatorsOptions) {
   const baseUrl = opts.baseUrl ?? SCRAPE_CREATORS_BASE_URL
   const ledger: CreditLedger = { used: 0, requests: 0, remaining: null }
 
+  // Créditos reservados por requests en vuelo: con concurrencia, el chequeo de presupuesto tiene que contarlos
+  let reserved = 0
+
   async function get<T extends RawBase>(path: string, params: Record<string, string | number | boolean | undefined>, expectedCost = 1): Promise<T> {
-    if (ledger.used + expectedCost > opts.budget) throw new BudgetExceededError(ledger.used, opts.budget, expectedCost)
+    if (ledger.used + reserved + expectedCost > opts.budget) throw new BudgetExceededError(ledger.used + reserved, opts.budget, expectedCost)
     const qs = new URLSearchParams()
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') qs.set(k, String(v))
-    const res = await fetchImpl(`${baseUrl}${path}?${qs.toString()}`, { headers: { 'x-api-key': opts.apiKey } })
+    reserved += expectedCost
+    let res: Response
     let body: T
     try {
-      body = (await res.json()) as T
-    } catch {
-      throw new ScrapeCreatorsError(res.status, `${path}: respuesta no JSON (${res.status})`)
+      res = await fetchImpl(`${baseUrl}${path}?${qs.toString()}`, { headers: { 'x-api-key': opts.apiKey } })
+      try {
+        body = (await res.json()) as T
+      } catch {
+        throw new ScrapeCreatorsError(res.status, `${path}: respuesta no JSON (${res.status})`)
+      }
+    } finally {
+      reserved -= expectedCost
     }
     ledger.requests++
     // Si la API no informa lo cobrado, se asume el costo esperado (mejor sobreestimar que quedarse corto)
