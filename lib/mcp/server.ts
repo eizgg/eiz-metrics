@@ -10,6 +10,7 @@ import {
   filterVideos,
   loadAudience,
   loadCoach,
+  loadCompetitorOutliers,
   loadCompetitors,
   loadContentPlan,
   loadCreatorProfile,
@@ -133,6 +134,17 @@ export function buildMcpServer(supabase: SupabaseClient, scope: McpScope, now: (
     inputSchema: {},
     annotations: READ_ONLY,
   }, () => safely(async () => json(await loadCompetitors(supabase, scope))))
+
+  server.registerTool('get_competitor_outliers', {
+    title: 'Videos de la competencia que pegaron',
+    description: 'Videos de los competidores que se salen de la media: views / mediana de views de los últimos videos de ese mismo creador (criterio principal) y views / seguidores. Para los outliers trae hook (lo que se dice en los primeros segundos), duración, si el sonido es propio, de otro o un tema, caption y link. Solo lee lo guardado: no gasta créditos.',
+    inputSchema: {
+      windowDays: z.number().int().min(1).max(60).optional().describe('Publicados en los últimos N días (por defecto 7)'),
+      threshold: z.number().min(1).max(50).optional().describe('Mínimo de veces la mediana del creador (por defecto 3)'),
+      handle: z.string().optional().describe('Solo esta cuenta'),
+    },
+    annotations: READ_ONLY,
+  }, (args) => safely(async () => json(await loadCompetitorOutliers(supabase, scope, args, now()))))
 
   server.registerTool('get_content_plan', {
     title: 'Ideas, guiones y calendario',

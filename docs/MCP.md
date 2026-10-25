@@ -16,6 +16,7 @@ escritorio y celular), sin copiar screenshots.
 | `get_creator_profile` | Perfil del creador con foco vigente y completitud |
 | `get_audience` | Demografía, métricas diarias de la cuenta e historial de seguidores |
 | `get_competitors` | Competencia: seguidores, frecuencia, engagement y sus mejores posteos recientes |
+| `get_competitor_outliers` | Videos de la competencia que se salen de la media (views / mediana del creador; views / seguidores), con hook, duración, tipo de sonido, caption y link. Lee lo guardado por el refresh: no gasta créditos |
 | `get_content_plan` | Ideas (con predicción y resultado real), guiones y calendario desde hoy |
 | `get_insights` | Reportes semanales, análisis de nicho y el último resultado de cada análisis de IA del dashboard |
 

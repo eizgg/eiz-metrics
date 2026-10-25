@@ -168,7 +168,7 @@ describe('herramientas MCP (protocolo en memoria)', () => {
     const client = await connect(db, await resolveScope(db.client(), 'eiz'))
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'get_audience', 'get_coach_context', 'get_competitors', 'get_content_plan', 'get_creator_profile',
+      'get_audience', 'get_coach_context', 'get_competitor_outliers', 'get_competitors', 'get_content_plan', 'get_creator_profile',
       'get_insights', 'get_overview', 'get_patterns', 'get_video', 'list_videos',
     ])
     expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true)
@@ -292,7 +292,7 @@ describe('endpoint HTTP (Streamable HTTP real)', () => {
     })
     expect(res.status).toBe(200)
     const body = await res.json() as { result?: { tools: Array<{ name: string }> } }
-    expect(body.result?.tools).toHaveLength(10)
+    expect(body.result?.tools).toHaveLength(11)
   })
 
   it('acepta el token en la URL (?key=) para conectores sin Request headers', async () => {
@@ -301,7 +301,7 @@ describe('endpoint HTTP (Streamable HTTP real)', () => {
     const transport = new StreamableHTTPClientTransport(withKey)
     const client = new Client({ name: 'sin-headers', version: '1.0.0' })
     await client.connect(transport)
-    expect((await client.listTools()).tools.length).toBe(10)
+    expect((await client.listTools()).tools.length).toBe(11)
     await client.close()
     const wrong = new URL(url)
     wrong.searchParams.set('key', 'otro')
@@ -314,7 +314,7 @@ describe('endpoint HTTP (Streamable HTTP real)', () => {
     const client = new Client({ name: 'claude-ai-simulado', version: '1.0.0' })
     await client.connect(transport)
     const { tools } = await client.listTools()
-    expect(tools.length).toBe(10)
+    expect(tools.length).toBe(11)
     const res = await client.callTool({ name: 'list_videos', arguments: { limit: 1, sort: 'views' } })
     expect((JSON.parse(text(res)) as { videos: VideoSummary[] }).videos[0].id).toBe(V1)
     await client.close()
