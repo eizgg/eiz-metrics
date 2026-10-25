@@ -8,7 +8,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { runAllAccounts } from '../analysis/pipeline.js'
-import { syncCompetitors } from '../competitors/sync.js'
+import { formatSyncSummary, syncCompetitors } from '../competitors/sync.js'
 import { createServiceClient } from '../ingest/sync.js'
 import { refreshExpiringTokens } from '../ingest/tokens.js'
 import { updateIdeaOutcomes } from '../strategy/persist.js'
@@ -33,7 +33,12 @@ export async function cronDaily(req: VercelRequest, res: VercelResponse) {
     const analysis = await step(() => runAllAccounts(supabase, now))
     const learning = await step(() => updateIdeaOutcomes(supabase, now))
     const tokens = isMonday ? await step(() => refreshExpiringTokens(supabase)) : null
-    const competitors = isMonday ? await step(() => syncCompetitors(supabase, now)) : null
+    let competitors = null
+    if (isMonday) {
+      const started = Date.now()
+      competitors = await step(() => syncCompetitors(supabase, { now, log: (l) => console.log(l) }))
+      console.log(formatSyncSummary(competitors, Date.now() - started))
+    }
     return res.status(200).json({ ok: true, analysis, learning, tokens, competitors })
   } catch (err) {
     return res.status(500).json({ ok: false, error: (err as Error).message })

@@ -245,3 +245,14 @@ describe('refresh de competidores de TikTok', () => {
     expect(none.outliers).toEqual([])
   })
 })
+
+describe('resumen para los logs del cron', () => {
+  it('una línea con tiempo, créditos y errores por cuenta', async () => {
+    const { formatSyncSummary } = await import('../sync.js')
+    const ok = formatSyncSummary({ synced: 2, skipped: 0, cached: 4, enriched: 0, creditsUsed: 0, creditsEstimated: 8, errors: [] }, 1234)
+    expect(ok).toBe('[competidores] ✅ 1.2s · sincronizadas 2 · en caché 4 · salteadas 0 · outliers nuevos 0 · créditos 0')
+    const bad = formatSyncSummary({ synced: 1, skipped: 1, cached: 0, enriched: 0, creditsUsed: 3, creditsEstimated: 8, errors: ['tiktok:@x: Sin créditos en Scrape Creators'] }, 61_000)
+    expect(bad.split('\n')).toEqual(['[competidores] ⚠️ 61.0s · sincronizadas 1 · en caché 0 · salteadas 1 · outliers nuevos 0 · créditos 3', '[competidores]   ✗ tiktok:@x: Sin créditos en Scrape Creators'])
+    expect(formatSyncSummary({ error: 'competitors: boom' }, 500)).toBe('[competidores] ❌ falló en 0.5s: competitors: boom')
+  })
+})
