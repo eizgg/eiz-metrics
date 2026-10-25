@@ -194,6 +194,14 @@ export async function syncCompetitors(supabase: SupabaseClient, nowOrOptions: Da
   return summary
 }
 
+// Una línea legible para los logs de Vercel: créditos, tiempo (el cron corta a los 60 s) y errores por cuenta
+export function formatSyncSummary(summary: CompetitorSyncSummary | { error: string }, elapsedMs: number): string {
+  const secs = (elapsedMs / 1000).toFixed(1)
+  if ('error' in summary) return `[competidores] ❌ falló en ${secs}s: ${summary.error}`
+  const head = `[competidores] ${summary.errors.length > 0 ? '⚠️' : '✅'} ${secs}s · sincronizadas ${summary.synced} · en caché ${summary.cached} · salteadas ${summary.skipped} · outliers nuevos ${summary.enriched} · créditos ${summary.creditsUsed}`
+  return summary.errors.length > 0 ? `${head}\n${summary.errors.map((e) => `[competidores]   ✗ ${e}`).join('\n')}` : head
+}
+
 interface ReferenceRow { url: string; account_id: string }
 
 // Contenido guardado en reference_videos.content (compatible con lo que lee la pantalla de Competencia: hook.text)
