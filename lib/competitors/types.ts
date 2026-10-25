@@ -6,6 +6,12 @@ export interface CompetitorPost {
   comments: number
   views: number | null
   caption: string | null
+  // Opcionales (los trae Scrape Creators para TikTok; Business Discovery / YouTube no los tienen)
+  url?: string | null
+  shares?: number | null
+  saves?: number | null
+  durationSeconds?: number | null
+  sound?: 'propio' | 'de_otro' | 'tema' | null
 }
 
 export interface CompetitorFetch {
