@@ -80,12 +80,18 @@ async function downloadFromTwin(supabase: SupabaseClient, video: VideoInfo, dest
 
   const errors: string[] = []
   for (const twin of twins) {
-    const r = await run('yt-dlp', ['-f', YTDLP_FORMAT, '-o', dest, '--no-playlist', twin.url ?? ''], { timeoutMs: 180_000 })
-    if (r.code === 0) {
-      console.log(`↪️  Instagram no entregó el reel: se bajó la copia de ${twin.platform} (${twin.url})`)
-      return
+    try {
+      // run() rechaza si se pasa del timeout: se captura para seguir con la próxima copia
+      const r = await run('yt-dlp', ['-f', YTDLP_FORMAT, '-o', dest, '--no-playlist', twin.url ?? ''], { timeoutMs: 180_000 })
+      if (r.code === 0) {
+        console.log(`↪️  Instagram no entregó el reel: se bajó la copia de ${twin.platform} (${twin.url})`)
+        return
+      }
+      errors.push(`${twin.platform}: ${r.stderr.trim().split('\n').pop() ?? `código ${r.code}`}`)
+    } catch (err) {
+      errors.push(`${twin.platform}: ${err instanceof Error ? err.message : String(err)}`)
     }
-    errors.push(`${twin.platform}: ${r.stderr.trim().split('\n').pop() ?? `código ${r.code}`}`)
+    await fs.rm(dest, { force: true }) // por si quedó un archivo a medio bajar
   }
   throw new Error(`${reason}. Tampoco se pudo bajar la copia: ${errors.join(' | ')}`)
 }
