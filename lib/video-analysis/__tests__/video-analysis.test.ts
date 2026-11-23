@@ -3,7 +3,7 @@ import { mockAnthropicText, mockAnthropicTool } from '../../ai/__tests__/mockAnt
 import { analyzeVideo, buildRequestBody, estimateCost } from '../analyze.js'
 import { cutsPerMinute, keyframeTimes, onScreenTextRatio, parseFfprobeDuration, parseSceneTimes } from '../ffmpeg.js'
 import { ANALYST_SYSTEM_PROMPT, buildContextText } from '../prompts.js'
-import { analysisJsonSchema, checkStructureCoverage, toContentUpdate, videoAnalysisSchema } from '../schema.js'
+import { analysisJsonSchema, checkStructureCoverage, coerceStringifiedFields, toContentUpdate, videoAnalysisSchema } from '../schema.js'
 import type { VideoAnalysis } from '../schema.js'
 
 const valid: VideoAnalysis = {
@@ -126,6 +126,18 @@ describe('analyzeVideo', () => {
     expect(r.analysis.hook.type).toBe('afirmacion_fuerte')
     expect(r.usage).toMatchObject({ inputTokens: 1200, outputTokens: 400 })
   })
+  it('acepta hook y structure devueltos como texto con JSON adentro', async () => {
+    mockAnthropicTool('report_video_analysis', { ...valid, hook: JSON.stringify(valid.hook), structure: JSON.stringify(valid.structure) })
+    const r = await analyzeVideo([{ timeSeconds: 0, jpegBase64: 'A' }], ctx, { apiKey: 'k', model: 'm' })
+    expect(r.analysis.hook).toEqual(valid.hook)
+    expect(r.analysis.structure).toEqual(valid.structure)
+  })
+
+  it('coerceStringifiedFields deja igual lo que no es JSON', () => {
+    expect(coerceStringifiedFields({ topic: 'barrio', hook: '{roto' })).toEqual({ topic: 'barrio', hook: '{roto' })
+    expect(coerceStringifiedFields('texto')).toBe('texto')
+  })
+
   it('falla si el modelo devuelve algo fuera del schema', async () => {
     mockAnthropicTool('report_video_analysis', { ...valid, format: 'inventado' })
     await expect(analyzeVideo([], ctx, { apiKey: 'k' })).rejects.toThrow(/Análisis inválido/)

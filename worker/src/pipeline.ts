@@ -10,6 +10,8 @@ import type { CorrectedExample } from '../../lib/video-analysis/prompts.js'
 import { toContentUpdate } from '../../lib/video-analysis/schema.js'
 import { GRAPH_API_VERSION } from '../../lib/ingest/constants.js'
 import { run, runOrThrow } from './exec.js'
+import { pickTwins } from './twins.js'
+import type { TwinCandidate } from './twins.js'
 
 export interface AnalysisJob {
   id: string
@@ -25,9 +27,14 @@ interface VideoInfo {
   external_id: string
   platform_account_id: string | null
   duration_seconds: number | null
+  published_at: string | null
 }
 
 const STORAGE_BUCKET = 'video-inputs'
+const YTDLP_FORMAT = 'best[ext=mp4][height<=1080]/best[ext=mp4]/best'
+
+// Instagram no entrega el archivo: pasa con reels que usan música con copyright (incluida la propia distribuida)
+export class MediaUnavailableError extends Error {}
 
 // --- 1. Obtener el archivo de video ---
 
@@ -50,7 +57,43 @@ async function resolveInstagramMediaUrl(supabase: SupabaseClient, video: VideoIn
     url = json.paging?.next ?? null
   }
   // Meta omite media_url en reels con material con copyright (p. ej. música con licencia) o borrados
-  throw new Error('Instagram no devolvió media_url para el reel (¿usa música con copyright o ya no está disponible?)')
+  throw new MediaUnavailableError('Instagram no devolvió media_url para el reel (¿usa música con copyright o ya no está disponible?)')
+}
+
+// Respaldo: baja la copia del mismo video en TikTok o YouTube (misma cuenta, publicada con minutos de diferencia).
+// Son videos propios y públicos: yt-dlp no usa la sesión de la cuenta, así que no hay riesgo de ban.
+async function downloadFromTwin(supabase: SupabaseClient, video: VideoInfo, dest: string, reason: string): Promise<void> {
+  const { data: pa } = await supabase.from('platform_accounts').select('account_id').eq('id', video.platform_account_id ?? '').maybeSingle()
+  const accountId = (pa as { account_id: string } | null)?.account_id
+  if (!accountId || !video.published_at) throw new Error(`${reason}. Sin cuenta o fecha para buscar la copia en otra red`)
+  const { data: pas } = await supabase.from('platform_accounts').select('id').eq('account_id', accountId)
+  const from = new Date(Date.parse(video.published_at) - 60 * 60_000).toISOString()
+  const to = new Date(Date.parse(video.published_at) + 60 * 60_000).toISOString()
+  const { data: vids } = await supabase
+    .from('videos')
+    .select('id, platform, url, published_at')
+    .in('platform_account_id', ((pas ?? []) as Array<{ id: string }>).map((p) => p.id))
+    .gte('published_at', from)
+    .lte('published_at', to)
+  const twins = pickTwins(video, (vids ?? []) as TwinCandidate[])
+  if (twins.length === 0) throw new Error(`${reason}. No hay copia del video en TikTok ni YouTube`)
+
+  const errors: string[] = []
+  for (const twin of twins) {
+    try {
+      // run() rechaza si se pasa del timeout: se captura para seguir con la próxima copia
+      const r = await run('yt-dlp', ['-f', YTDLP_FORMAT, '-o', dest, '--no-playlist', twin.url ?? ''], { timeoutMs: 180_000 })
+      if (r.code === 0) {
+        console.log(`↪️  Instagram no entregó el reel: se bajó la copia de ${twin.platform} (${twin.url})`)
+        return
+      }
+      errors.push(`${twin.platform}: ${r.stderr.trim().split('\n').pop() ?? `código ${r.code}`}`)
+    } catch (err) {
+      errors.push(`${twin.platform}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    await fs.rm(dest, { force: true }) // por si quedó un archivo a medio bajar
+  }
+  throw new Error(`${reason}. Tampoco se pudo bajar la copia: ${errors.join(' | ')}`)
 }
 
 async function downloadHttp(url: string, dest: string): Promise<void> {
@@ -73,7 +116,12 @@ export async function fetchVideoFile(supabase: SupabaseClient, video: VideoInfo,
     // Propio canal: permitido por los ToS del dueño
     await runOrThrow('yt-dlp', ['-f', 'mp4/best[height<=720]', '-o', dest, '--no-playlist', source], { timeoutMs: 180_000 })
   } else if (video.platform === 'instagram') {
-    await downloadHttp(await resolveInstagramMediaUrl(supabase, video), dest)
+    try {
+      await downloadHttp(await resolveInstagramMediaUrl(supabase, video), dest)
+    } catch (err) {
+      if (!(err instanceof MediaUnavailableError)) throw err
+      await downloadFromTwin(supabase, video, dest, err.message)
+    }
   } else {
     throw new Error(`No hay forma automática de obtener el video de ${video.platform}: subí el archivo desde el dashboard`)
   }
@@ -216,7 +264,7 @@ export async function processJob(supabase: SupabaseClient, job: AnalysisJob): Pr
   if (!job.video_id) throw new Error('Job sin video_id ni reference_video_id')
   const { data: videoRow, error } = await supabase
     .from('videos')
-    .select('id, platform, url, external_id, platform_account_id, duration_seconds')
+    .select('id, platform, url, external_id, platform_account_id, duration_seconds, published_at')
     .eq('id', job.video_id)
     .single()
   if (error || !videoRow) throw new Error(`Video no encontrado: ${error?.message}`)

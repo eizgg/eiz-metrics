@@ -44,6 +44,29 @@ export const videoAnalysisSchema = z.object({
 
 export type VideoAnalysis = z.infer<typeof videoAnalysisSchema>
 
+/**
+ * A veces el modelo devuelve un campo objeto/array (hook, structure, cta…) como texto con el JSON adentro
+ * ("{\"text\": …}") y la validación lo rechaza. Antes de validar, esos textos se convierten a lo que contienen.
+ * Si el texto no es JSON válido se deja igual y la validación falla como antes.
+ */
+export function coerceStringifiedFields(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    const trimmed = typeof value === 'string' ? value.trim() : ''
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        out[key] = JSON.parse(trimmed)
+        continue
+      } catch {
+        // no era JSON: queda como texto
+      }
+    }
+    out[key] = value
+  }
+  return out
+}
+
 export const ANALYSIS_TOOL_NAME = 'report_video_analysis'
 
 // JSON Schema para el tool use (zod 4 lo genera directamente)

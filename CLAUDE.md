@@ -173,6 +173,7 @@ vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites 
 - **El perfil lo define el usuario, no el código**: nada en prompts ni análisis asume que el creador es EIZ ni de qué nicho es; todo sale de `account_profiles` (`describeCreator`). El "foco actual" tiene fecha de vencimiento y lo vencido se ignora solo.
 - **Creadores sugeridos**: YouTube por la Data API pública (verificado); Instagram/TikTok los propone la IA y quedan marcados "a verificar" hasta que el sync los confirme. Para TikTok también hay descubrimiento por búsqueda (`scripts/discover-competitors.ts`, gasta créditos): devuelve candidatas y una persona elige.
 - **Conector MCP de solo lectura**: `/api/mcp` expone las mismas cifras del dashboard a los chats de Claude (custom connector con header fijo `Authorization: Bearer <MCP_TOKEN>`). No escribe en la base ni llama a la IA: el chat narra, el código calcula.
+- **Reels con música: respaldo desde la copia en otra red**: Meta no entrega el archivo (`media_url`) de reels con música con copyright, incluida la música propia distribuida. En ese caso el worker busca el mismo video en TikTok o YouTube (misma cuenta, ±30 min) y lo baja con `yt-dlp` (`worker/src/twins.ts`). Es contenido propio y público, y yt-dlp no usa la sesión de la cuenta. El análisis se guarda en el video de Instagram.
 - **Degradación elegante**: sin migraciones aplicadas o sin base, el dashboard muestra data de ejemplo y la ingesta no rompe.
 
 ## Roadmap
