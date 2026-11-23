@@ -10,9 +10,9 @@ existe para poder arreglarlo rápido cuando se rompa.
 |------|--------|--------------------------|
 | Lista de videos + stats básicas (views, likes, comments, shares, saves, duración, fecha) | **Implementado y verificado** (oct 2026) | `/tiktok/creator/manage/item_list/v1` (+ los viejos como fallback) |
 | Seguidores | **Implementado y verificado** (oct 2026) | `/tiktokstudio/api/web/relation/multiGetFollowRelationCount` |
-| Curva de retención por video | **Pendiente de descubrir** | — |
-| % que vio el video completo, tiempo promedio, seguidores nuevos | **Pendiente de descubrir** | — |
-| Fuentes de tráfico (Para ti, perfil, búsqueda, sonido) | **Pendiente de descubrir** | — |
+| Curva de retención por video | **Implementado y verificado** (23/11/2026) | `/aweme/v2/data/insight/` (`video_retention_rate_realtime`) |
+| % que vio el video completo, tiempo promedio, seguidores nuevos | **Implementado y verificado** (23/11/2026) | `/aweme/v2/data/insight/` (`video_finish_rate_realtime`, `video_per_duration_realtime`, `video_new_followers`) |
+| Fuentes de tráfico (Para ti, perfil, búsqueda, sonido) | **Implementado y verificado** (23/11/2026) | `/aweme/v2/data/insight/` (`video_traffic_source_percent_realtime`) |
 | Audiencia (género, edad, territorios, horas activas) | **Pendiente de descubrir** | — |
 
 ## Cómo descubrir un endpoint nuevo
@@ -34,7 +34,7 @@ Capturados con el modo descubrimiento el 2026-10-07 (TikTok Studio web).
 |----------|----------------------|-----|
 | `/tiktok/creator/manage/item_list/v1/` | `{ item_list: [...], cursor, has_more, ... }`. Cada item es **plano**: `item_id`, `desc`, `create_time` (segundos), `duration` (**milisegundos**), `like_count`, `comment_count`, `favorite_count` (saves), `is_pinned`, etc. | Lista de videos. Pagina por scroll en Content: el script sube cada página |
 | `/tiktokstudio/api/web/relation/multiGetFollowRelationCount` | `{ FollowerCount: { "<uid>": "15054" }, FollowingCount, FriendCount, BaseResp }`. **Los contadores son strings** y van en un mapa por uid | Seguidores |
-| `/aweme/v2/data/insight/` | `{ comment_history, follower_active_history_days, follower_active_history_hours, follower_num_history, ... }` | Pendiente de mapear: historial de seguidores y horas activas (audiencia) |
+| `/aweme/v2/data/insight/` | Se pide con `type_requests=[{insigh_type, aweme_id}]` (sic, `insigh_type`). Por video: `video_info` (`aweme_id`, `desc`, `create_time` en s, `statistics`, `video.duration` en **ms**); `video_per_duration_realtime.value.value` (s promedio); `video_finish_rate_realtime.value.value` (proporción 0–1); `video_new_followers.value`; `video_retention_rate_realtime.value.list[{timestamp (ms, string), value (0–1)}]`; `video_traffic_source_percent_realtime.value.value[{key ("For You", "Personal Profile", "Follow", "Search", "Sound", "Direct Message", "Others"), value}]`. A nivel cuenta también trae `follower_active_history_*`, `follower_num_history` | **Analítica por video.** El userscript recorta la respuesta (`recortarInsight`) y el servidor la interpreta (`insightToVideo` en `lib/ingest/tiktok.ts`). Funciona con una URL mínima (`aid=1988&app_name=tiktok_creator_center&tz_offset=…&type_requests=…`, sin firmas): el menú "traer analítica de videos recientes" la pide para los videos de los últimos 30 días, de a uno cada 1,5 s |
 | `/tiktok/v1/analytics/insights/` | `{ article_links_ctr, ... }` | Pendiente de revisar |
 | `/tiktok/v1/creator/m10n_center/reward_analytics` | monetización | No se usa |
 

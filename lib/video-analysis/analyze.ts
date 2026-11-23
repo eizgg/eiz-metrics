@@ -62,14 +62,43 @@ export function buildRequestBody(model: string, frames: FrameImage[], ctx: Analy
   }
 }
 
+type ParseOutcome = { ok: true; analysis: VideoAnalysis } | { ok: false; error: string; toolUseId: string | null }
+
+function parseResponse(message: Anthropic.Message): ParseOutcome {
+  const toolUse = message.content.find((c): c is Anthropic.ToolUseBlock => c.type === 'tool_use' && c.name === ANALYSIS_TOOL_NAME)
+  if (!toolUse) return { ok: false, error: 'El modelo no devolvió el análisis estructurado', toolUseId: null }
+  const parsed = videoAnalysisSchema.safeParse(coerceStringifiedFields(toolUse.input))
+  if (parsed.success) return { ok: true, analysis: parsed.data }
+  const issues = parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
+  return { ok: false, error: `Análisis inválido: ${issues}`, toolUseId: toolUse.id }
+}
+
+/**
+ * Analiza el video. Si la respuesta no cumple el schema (p. ej. hook como texto suelto o sin structure),
+ * se le devuelven los errores al modelo en el mismo hilo y se reintenta UNA vez, en vez de fallar el job.
+ */
 export async function analyzeVideo(frames: FrameImage[], ctx: AnalysisContext, options: AiOptions = {}): Promise<AnalysisResult> {
   const model = resolveModel(options)
-  const { message, usage } = await postMessages(buildRequestBody(model, frames, ctx), options)
+  const body = buildRequestBody(model, frames, ctx)
+  const first = await postMessages(body, options)
+  let outcome = parseResponse(first.message)
+  let inputTokens = first.usage.inputTokens
+  let outputTokens = first.usage.outputTokens
 
-  const toolUse = message.content.find((c): c is Anthropic.ToolUseBlock => c.type === 'tool_use' && c.name === ANALYSIS_TOOL_NAME)
-  if (!toolUse) throw new Error('El modelo no devolvió el análisis estructurado')
-  const parsed = videoAnalysisSchema.safeParse(coerceStringifiedFields(toolUse.input))
-  if (!parsed.success) throw new Error(`Análisis inválido: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
+  if (!outcome.ok) {
+    const fix = `${outcome.error}. Llamá de nuevo a la herramienta "${ANALYSIS_TOOL_NAME}" con el objeto completo: todos los campos requeridos, con su tipo (objetos y arrays reales, no texto).`
+    const correction: Anthropic.ContentBlockParam[] = outcome.toolUseId
+      ? [{ type: 'tool_result', tool_use_id: outcome.toolUseId, is_error: true, content: fix }]
+      : [{ type: 'text', text: fix }]
+    const retry = await postMessages(
+      { ...body, messages: [...body.messages, { role: 'assistant', content: first.message.content }, { role: 'user', content: correction }] },
+      options,
+    )
+    inputTokens += retry.usage.inputTokens
+    outputTokens += retry.usage.outputTokens
+    outcome = parseResponse(retry.message)
+  }
 
-  return { analysis: parsed.data, model, usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, costUsd: estimateCost(usage.inputTokens, usage.outputTokens) } }
+  if (!outcome.ok) throw new Error(outcome.error)
+  return { analysis: outcome.analysis, model, usage: { inputTokens, outputTokens, costUsd: estimateCost(inputTokens, outputTokens) } }
 }

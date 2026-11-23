@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         EIZ Metrics - TikTok Interceptor
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.9
 // @description  Captura métricas de TikTok Creator Center en tiempo real y las envía al Dashboard de EIZ
 // @author       Antigravity AI
 // @match        *://creator.tiktok.com/*
@@ -117,6 +117,45 @@
     // Ver docs/tiktok-endpoints.md. Si TikTok los cambia, reactivar el modo descubrimiento.
     const RE_LISTA_VIDEOS = /\/tiktok\/creator\/manage\/item_list\/v1|\/api\/creator\/item\/list|\/analytics\/post|\/creator-center\/api\/video\/list|\/share\/analytics\/item_list/;
     const RE_SEGUIDORES = /\/relation\/multiGetFollowRelationCount|\/api\/creator\/user\/info|\/creator-center\/api\/user\/stats/;
+    // Analítica de un video (retención, tiempo promedio, % completo, seguidores nuevos, tráfico). Descubierto el 23/11/2026.
+    const RE_INSIGHT = /\/aweme\/v2\/data\/insight\//;
+
+    // Recorta la respuesta de analítica a lo que interpreta el servidor (lib/ingest/tiktok.ts → insightToVideo).
+    // La interpretación vive en el servidor: si TikTok cambia algo, se arregla ahí sin reinstalar el script.
+    function recortarInsight(d) {
+        const info = d && d.video_info;
+        if (!info || !info.aweme_id) return null;
+        if (!d.video_per_duration_realtime && !d.video_retention_rate_realtime) return null;
+        return {
+            video_info: {
+                aweme_id: String(info.aweme_id),
+                desc: info.desc || '',
+                create_time: info.create_time,
+                statistics: info.statistics || null,
+                video: { duration: info.video ? info.video.duration : null }
+            },
+            video_per_duration_realtime: d.video_per_duration_realtime || null,
+            video_finish_rate_realtime: d.video_finish_rate_realtime || null,
+            video_new_followers: d.video_new_followers || null,
+            video_retention_rate_realtime: d.video_retention_rate_realtime || null,
+            video_traffic_source_percent_realtime: d.video_traffic_source_percent_realtime || null
+        };
+    }
+
+    // Recuerda los videos vistos en la lista (id + fecha) para poder pedir su analítica después
+    function recordarVideos(videos) {
+        let guardados = [];
+        try { guardados = JSON.parse(GM_getValue('videos_recientes', '[]')); } catch (e) { guardados = []; }
+        const porId = {};
+        guardados.concat(videos.map(function (v) { return { id: v.id, t: v.published_at }; }))
+            .forEach(function (v) { porId[v.id] = v; });
+        const limite = Date.now() - 60 * 86400000;
+        const lista = Object.keys(porId).map(function (k) { return porId[k]; })
+            .filter(function (v) { return v.t >= limite; })
+            .sort(function (a, b) { return b.t - a.t; })
+            .slice(0, 100);
+        GM_setValue('videos_recientes', JSON.stringify(lista));
+    }
 
     function primerNumero(valor) {
         if (typeof valor === 'number') return valor;
@@ -212,6 +251,7 @@
         }).filter(function (v) { return v !== null; });
 
         if (videos.length > 0) {
+            recordarVideos(videos);
             console.log('🦁 [EIZ Metrics] Se encontraron ' + videos.length + ' videos listos para enviar.');
             enviarAlDashboard({ platform: 'tiktok', videos: videos });
         }
@@ -239,9 +279,17 @@
         descubrir(url, texto);
         const esLista = RE_LISTA_VIDEOS.test(url);
         const esSeguidores = RE_SEGUIDORES.test(url);
-        if (!esLista && !esSeguidores) return;
+        const esInsight = RE_INSIGHT.test(url);
+        if (!esLista && !esSeguidores && !esInsight) return;
         try {
             const data = JSON.parse(texto);
+            if (esInsight) {
+                const recorte = recortarInsight(data);
+                if (recorte) {
+                    console.log('🦁 [EIZ Metrics] Analítica del video ' + recorte.video_info.aweme_id + ' capturada.');
+                    enviarAlDashboard({ platform: 'tiktok', insights: [recorte] });
+                }
+            }
             if (esLista) {
                 console.log('🦁 [EIZ Metrics] Petición ' + origen + ' de videos capturada:', url.split('?')[0]);
                 procesarVideos(buscarLista(data), /\/item_list\/v1/.test(url));
@@ -268,6 +316,42 @@
         response.clone().text().then(function (t) { procesarRespuesta(url, t, 'FETCH'); }).catch(function () { /* respuesta no legible */ });
         return response;
     };
+
+    // --- ANALÍTICA DE LOS VIDEOS RECIENTES, CON UN CLIC ---
+    // Pide la analítica de cada video de los últimos 30 días, de a uno y despacio (1,5 s entre pedidos),
+    // con la sesión del navegador: es lo mismo que hace TikTok Studio al abrir la analítica de cada video.
+    const TIPOS_INSIGHT = ['video_info', 'video_retention_rate_realtime', 'video_per_duration_realtime',
+        'video_finish_rate_realtime', 'video_new_followers', 'video_traffic_source_percent_realtime'];
+    function esperar(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+    async function traerAnaliticaReciente() {
+        let videos = [];
+        try { videos = JSON.parse(GM_getValue('videos_recientes', '[]')); } catch (e) { videos = []; }
+        const limite = Date.now() - 30 * 86400000;
+        videos = videos.filter(function (v) { return v.t >= limite; });
+        if (videos.length === 0) {
+            window.alert('EIZ Metrics: todavía no vi tus videos. Abrí "Contenido" en TikTok Studio, esperá a que cargue la lista y volvé a probar.');
+            return;
+        }
+        console.log('🦁 [EIZ Metrics] Pidiendo la analítica de ' + videos.length + ' videos...');
+        const tz = -new Date().getTimezoneOffset() * 60;
+        const recortes = [];
+        for (let i = 0; i < videos.length; i++) {
+            const tipos = encodeURIComponent(JSON.stringify(TIPOS_INSIGHT.map(function (t) { return { insigh_type: t, aweme_id: videos[i].id }; })));
+            try {
+                const r = await originalFetch('/aweme/v2/data/insight/?aid=1988&app_name=tiktok_creator_center&tz_offset=' + tz + '&type_requests=' + tipos, { credentials: 'include' });
+                const recorte = recortarInsight(await r.json());
+                if (recorte) recortes.push(recorte);
+            } catch (e) {
+                console.warn('🦁 [EIZ Metrics] No pude traer la analítica de ' + videos[i].id + ':', e);
+            }
+            await esperar(1500);
+        }
+        for (let j = 0; j < recortes.length; j += 25) {
+            enviarAlDashboard({ platform: 'tiktok', insights: recortes.slice(j, j + 25) });
+        }
+        window.alert('EIZ Metrics: analítica de ' + recortes.length + ' de ' + videos.length + ' videos enviada al dashboard.');
+    }
+    GM_registerMenuCommand('EIZ Metrics: traer analítica de videos recientes (30 días)', traerAnaliticaReciente);
 
     // Interceptar llamadas a través de XMLHttpRequest
     const originalOpen = pagina.XMLHttpRequest.prototype.open;

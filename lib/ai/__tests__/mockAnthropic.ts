@@ -36,6 +36,17 @@ export function mockAnthropicTool(name: string, input: unknown, opts: MockMessag
   return mockAnthropic([{ type: 'tool_use', name, input }], opts)
 }
 
+// Respuestas distintas en cada llamada, en orden (para probar reintentos)
+export function mockAnthropicSequence(responses: Array<{ content: Block[]; opts?: MockMessageOptions }>) {
+  let i = 0
+  const fn = vi.fn(async () => {
+    const r = responses[Math.min(i++, responses.length - 1)]
+    return jsonResponse(anthropicMessage(r.content, r.opts ?? {}), 200)
+  })
+  vi.stubGlobal('fetch', fn)
+  return fn
+}
+
 export function mockAnthropicText(text: string, opts: MockMessageOptions = {}) {
   return mockAnthropic([{ type: 'text', text }], opts)
 }
