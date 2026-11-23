@@ -14,6 +14,15 @@ export interface QueueCandidate {
   published_at: string | null
 }
 
+// Plataformas que se analizan. EIZ sube el mismo video a las 3 redes: analizar una sola alcanza y no se paga 3 veces.
+// Configurable con ANALYSIS_PLATFORMS (lista separada por comas). TikTok nunca se encola solo (requiere subir el archivo).
+export const DEFAULT_ANALYSIS_PLATFORMS = ['instagram']
+
+export function analysisPlatforms(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  const list = (env.ANALYSIS_PLATFORMS ?? '').split(',').map((p) => p.trim().toLowerCase()).filter(Boolean)
+  return new Set(list.length > 0 ? list : DEFAULT_ANALYSIS_PLATFORMS)
+}
+
 // Ventana de "reciente": lo publicado en estos días se analiza antes que el backlog de virales viejos
 export const RECENT_WINDOW_DAYS = 30
 
@@ -38,8 +47,15 @@ export function prioritizeCandidates(
   return [...recent, ...older]
 }
 
-// Encola los videos que todavía no fueron analizados ni tienen job pendiente (recientes primero)
-export async function enqueueUnanalyzed(supabase: SupabaseClient, accountId: string, limit = 10, now: Date = new Date()): Promise<QueueSummary> {
+// Encola los videos que todavía no fueron analizados ni tienen job pendiente (recientes primero).
+// Los jobs en cola de plataformas excluidas se cancelan (quedan como 'failed' con el motivo).
+export async function enqueueUnanalyzed(
+  supabase: SupabaseClient,
+  accountId: string,
+  limit = 10,
+  now: Date = new Date(),
+  platforms: Set<string> = analysisPlatforms(),
+): Promise<QueueSummary> {
   const { data: pas } = await supabase.from('platform_accounts').select('id').eq('account_id', accountId)
   const paIds = ((pas ?? []) as Array<{ id: string }>).map((p) => p.id)
   if (paIds.length === 0) return { queued: 0, skipped: 0 }
@@ -49,6 +65,15 @@ export async function enqueueUnanalyzed(supabase: SupabaseClient, accountId: str
   const videos = (vids ?? []) as QueueCandidate[]
   if (videos.length === 0) return { queued: 0, skipped: 0 }
   const ids = videos.map((v) => v.id)
+
+  const excludedIds = videos.filter((v) => !platforms.has(v.platform)).map((v) => v.id)
+  if (excludedIds.length > 0) {
+    await supabase
+      .from('analysis_jobs')
+      .update({ status: 'failed', error: 'Plataforma excluida del análisis (ANALYSIS_PLATFORMS)', finished_at: now.toISOString() })
+      .eq('status', 'queued')
+      .in('video_id', excludedIds)
+  }
 
   const [{ data: analyzed }, { data: jobs }, { data: latest }] = await Promise.all([
     supabase.from('video_content').select('video_id, analyzed_at, manual_override').in('video_id', ids),
@@ -61,7 +86,7 @@ export async function enqueueUnanalyzed(supabase: SupabaseClient, accountId: str
 
   const eligible = videos
     // TikTok requiere que el usuario suba el archivo: no se encola solo
-    .filter((v) => v.platform !== 'tiktok' && !done.has(v.id) && !pending.has(v.id))
+    .filter((v) => platforms.has(v.platform) && v.platform !== 'tiktok' && !done.has(v.id) && !pending.has(v.id))
   const candidates = prioritizeCandidates(eligible, views, now).slice(0, limit)
 
   if (candidates.length > 0) {

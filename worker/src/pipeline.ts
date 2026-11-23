@@ -49,7 +49,8 @@ async function resolveInstagramMediaUrl(supabase: SupabaseClient, video: VideoIn
     if (hit?.media_url) return hit.media_url
     url = json.paging?.next ?? null
   }
-  throw new Error('No se encontró media_url para el reel (¿muy viejo o ya no está disponible?)')
+  // Meta omite media_url en reels con material con copyright (p. ej. música con licencia) o borrados
+  throw new Error('Instagram no devolvió media_url para el reel (¿usa música con copyright o ya no está disponible?)')
 }
 
 async function downloadHttp(url: string, dest: string): Promise<void> {
@@ -116,7 +117,11 @@ export interface Transcript {
 export async function transcribe(file: string): Promise<Transcript | null> {
   const script = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'transcribe.py')
   const r = await run('python3', [script, file], { timeoutMs: 300_000 })
-  if (r.code !== 0) return null // videos sin voz o modelo no disponible: seguimos sin transcript
+  // Código 2 = video sin voz. Cualquier otro error se loguea: antes se tragaba y el transcript quedaba vacío sin explicación
+  if (r.code !== 0) {
+    if (r.code !== 2) console.warn(`⚠️  Transcripción falló (código ${r.code}): ${r.stderr.slice(-600)}`)
+    return null
+  }
   try {
     return JSON.parse(r.stdout) as Transcript
   } catch {
