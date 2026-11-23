@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { callStructured, callText, hasApiKey, resolveApiKey, systemBlocks } from '../client.js'
+import { callStructured, callText, DEFAULT_MODEL, hasApiKey, resolveApiKey, resolveModel, systemBlocks } from '../client.js'
 import { lastRequestBody, mockAnthropicError, mockAnthropicText, mockAnthropicTool, mockAnthropic } from './mockAnthropic.js'
 
 const schema = z.object({ titulo: z.string(), n: z.number() })
@@ -12,6 +12,20 @@ describe('cliente de Anthropic', () => {
     expect(resolveApiKey({ apiKey: '' })).toBeNull()
     expect(hasApiKey({ apiKey: '   ' })).toBe(false)
     expect(hasApiKey({ apiKey: 'k' })).toBe(true)
+  })
+
+  it('un ANTHROPIC_MODEL vacío usa el modelo por defecto', () => {
+    const prev = process.env.ANTHROPIC_MODEL
+    try {
+      process.env.ANTHROPIC_MODEL = ''
+      expect(resolveModel()).toBe(DEFAULT_MODEL)
+      process.env.ANTHROPIC_MODEL = 'otro-modelo'
+      expect(resolveModel()).toBe('otro-modelo')
+      expect(resolveModel({ model: 'explicito' })).toBe('explicito')
+    } finally {
+      if (prev === undefined) delete process.env.ANTHROPIC_MODEL
+      else process.env.ANTHROPIC_MODEL = prev
+    }
   })
 
   it('el bloque estable del system lleva cache_control y el volátil no', () => {

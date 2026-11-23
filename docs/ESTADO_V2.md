@@ -18,7 +18,7 @@ Referencia: [`PROMPT_MEJORAS_V2.md`](./PROMPT_MEJORAS_V2.md).
 | B — Schema de contenido | ✅ En código (0004) | Aplicarla |
 | C — Retención / audiencia / interacciones | 🟡 Implementada **sin verificar contra APIs reales** | Llamadas reales de IG/YT; endpoints de TikTok Studio |
 | D — Insights | ✅ En código, con tests | Necesita datos reales; los patrones de contenido necesitan la Fase E |
-| E — Análisis de video | 🟡 Pipeline y worker escritos y testeados en sus partes puras | Desplegar el worker; probar con un video real |
+| E — Análisis de video | 🟡 Worker desplegable en GitHub Actions (`analysis-worker.yml`) | Aplicar 0011, cargar secrets y correr el workflow a mano con 1–2 videos |
 | F — Competencia y nicho | ✅ En código, con tests | Cargar competidores; probar Business Discovery con el token real |
 | G — Estrategia | ✅ En código, con tests | Primera generación real (necesita `ANTHROPIC_API_KEY`, perfil y datos) |
 | H — Perfil del creador, coach y caché de IA | ✅ En código, con tests | Aplicar 0010; completar el perfil desde la pantalla "Perfil"; `YOUTUBE_API_KEY` para la búsqueda de creadores |
@@ -92,7 +92,8 @@ Descubrir los endpoints de retención, audiencia y tráfico con el modo descubri
 `docs/tiktok-endpoints.md`. El endpoint de subida ya acepta y guarda esos campos (validado con zod).
 
 ### 7. Worker de análisis de video (Fase E)
-Desplegar `worker/` (Fly.io / Railway) con `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`.
+Corre en GitHub Actions (`.github/workflows/analysis-worker.yml`, diario 05:15 UTC + manual). Cargar en el repo los secrets
+`VITE_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY` y aplicar la migración 0011 (cola: recientes primero).
 Opcional: `ANALYSIS_PRICE_IN_PER_MTOK` / `ANALYSIS_PRICE_OUT_PER_MTOK` para registrar costo en `analysis_jobs`.
 Probar con 1–2 videos antes del lote de los 20 más vistos. Nunca se automatiza la descarga de videos de terceros.
 

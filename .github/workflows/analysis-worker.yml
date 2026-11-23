@@ -1,0 +1,66 @@
+# Worker de análisis de video (Fase E) corriendo en GitHub Actions: no hace falta Fly.io ni Railway.
+# El cron diario de Vercel (04:30 UTC) encola videos en analysis_jobs; este workflow los procesa después.
+# Secrets requeridos (Settings → Secrets and variables → Actions):
+#   VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY
+# Variables opcionales: ANTHROPIC_MODEL, ANALYSIS_MAX_JOBS (tope por corrida, default 15),
+#   ANALYSIS_PRICE_IN_PER_MTOK / ANALYSIS_PRICE_OUT_PER_MTOK (para registrar costo)
+name: Análisis de video
+
+on:
+  schedule:
+    - cron: '15 5 * * *'
+  workflow_dispatch:
+    inputs:
+      max:
+        description: 'Tope de videos a analizar en esta corrida'
+        required: false
+        default: '15'
+
+concurrency:
+  group: analysis-worker
+  cancel-in-progress: false
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: worker/requirements.txt
+
+      - name: Dependencias del sistema (ffmpeg, tesseract)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng
+
+      - name: Dependencias de Python (faster-whisper, yt-dlp)
+        run: pip install -r worker/requirements.txt
+
+      # El modelo "small" de whisper pesa ~500 MB: se cachea entre corridas
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-small-v1
+
+      - run: npm ci
+
+      - name: Procesar la cola
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          ANALYSIS_PRICE_IN_PER_MTOK: ${{ vars.ANALYSIS_PRICE_IN_PER_MTOK }}
+          ANALYSIS_PRICE_OUT_PER_MTOK: ${{ vars.ANALYSIS_PRICE_OUT_PER_MTOK }}
+          MAX_JOBS: ${{ github.event.inputs.max || vars.ANALYSIS_MAX_JOBS || '15' }}
+        run: npx tsx worker/src/main.ts --once --max "$MAX_JOBS"

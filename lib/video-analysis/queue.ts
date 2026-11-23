@@ -7,15 +7,46 @@ export interface QueueSummary {
   skipped: number
 }
 
-// Encola los videos con más views que todavía no fueron analizados ni tienen job pendiente
-export async function enqueueUnanalyzed(supabase: SupabaseClient, accountId: string, limit = 10): Promise<QueueSummary> {
+export interface QueueCandidate {
+  id: string
+  url: string | null
+  platform: string
+  published_at: string | null
+}
+
+// Ventana de "reciente": lo publicado en estos días se analiza antes que el backlog de virales viejos
+export const RECENT_WINDOW_DAYS = 30
+
+/**
+ * Orden de la cola: primero lo publicado en los últimos RECENT_WINDOW_DAYS (más nuevo primero),
+ * después el resto por views. Antes era solo por views y los videos nuevos no entraban nunca
+ * porque siempre había virales viejos sin analizar adelante.
+ */
+export function prioritizeCandidates(
+  videos: QueueCandidate[],
+  views: Map<string, number>,
+  now: Date = new Date(),
+): QueueCandidate[] {
+  const cutoff = now.getTime() - RECENT_WINDOW_DAYS * 86_400_000
+  const time = (v: QueueCandidate) => (v.published_at ? Date.parse(v.published_at) : Number.NaN)
+  const isRecent = (v: QueueCandidate) => {
+    const t = time(v)
+    return Number.isFinite(t) && t >= cutoff
+  }
+  const recent = videos.filter(isRecent).sort((a, b) => time(b) - time(a))
+  const older = videos.filter((v) => !isRecent(v)).sort((a, b) => (views.get(b.id) ?? 0) - (views.get(a.id) ?? 0))
+  return [...recent, ...older]
+}
+
+// Encola los videos que todavía no fueron analizados ni tienen job pendiente (recientes primero)
+export async function enqueueUnanalyzed(supabase: SupabaseClient, accountId: string, limit = 10, now: Date = new Date()): Promise<QueueSummary> {
   const { data: pas } = await supabase.from('platform_accounts').select('id').eq('account_id', accountId)
   const paIds = ((pas ?? []) as Array<{ id: string }>).map((p) => p.id)
   if (paIds.length === 0) return { queued: 0, skipped: 0 }
 
-  const { data: vids, error } = await supabase.from('videos').select('id, url, platform').in('platform_account_id', paIds)
+  const { data: vids, error } = await supabase.from('videos').select('id, url, platform, published_at').in('platform_account_id', paIds)
   if (error) throw new Error(`videos: ${error.message}`)
-  const videos = (vids ?? []) as Array<{ id: string; url: string | null; platform: string }>
+  const videos = (vids ?? []) as QueueCandidate[]
   if (videos.length === 0) return { queued: 0, skipped: 0 }
   const ids = videos.map((v) => v.id)
 
@@ -28,11 +59,10 @@ export async function enqueueUnanalyzed(supabase: SupabaseClient, accountId: str
   const pending = new Set(((jobs ?? []) as Array<{ video_id: string }>).map((j) => j.video_id))
   const views = new Map(((latest ?? []) as Array<{ video_id: string; views: number }>).map((m) => [m.video_id, m.views]))
 
-  const candidates = videos
+  const eligible = videos
     // TikTok requiere que el usuario suba el archivo: no se encola solo
     .filter((v) => v.platform !== 'tiktok' && !done.has(v.id) && !pending.has(v.id))
-    .sort((a, b) => (views.get(b.id) ?? 0) - (views.get(a.id) ?? 0))
-    .slice(0, limit)
+  const candidates = prioritizeCandidates(eligible, views, now).slice(0, limit)
 
   if (candidates.length > 0) {
     const { error: insertErr } = await supabase.from('analysis_jobs').insert(candidates.map((v) => ({ video_id: v.id, source_url: v.url })))
