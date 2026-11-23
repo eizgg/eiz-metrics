@@ -4,7 +4,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { postMessages, resolveModel, systemBlocks } from '../ai/client.js'
 import { effortConfig } from '../anthropic-model.js'
 import type { AiOptions } from '../ai/client.js'
-import { ANALYSIS_TOOL_NAME, analysisJsonSchema, videoAnalysisSchema } from './schema.js'
+import { ANALYSIS_TOOL_NAME, analysisJsonSchema, coerceStringifiedFields, videoAnalysisSchema } from './schema.js'
 import type { VideoAnalysis } from './schema.js'
 import { ANALYST_SYSTEM_PROMPT, buildContextText } from './prompts.js'
 import type { AnalysisContext } from './prompts.js'
@@ -68,7 +68,7 @@ export async function analyzeVideo(frames: FrameImage[], ctx: AnalysisContext, o
 
   const toolUse = message.content.find((c): c is Anthropic.ToolUseBlock => c.type === 'tool_use' && c.name === ANALYSIS_TOOL_NAME)
   if (!toolUse) throw new Error('El modelo no devolvió el análisis estructurado')
-  const parsed = videoAnalysisSchema.safeParse(toolUse.input)
+  const parsed = videoAnalysisSchema.safeParse(coerceStringifiedFields(toolUse.input))
   if (!parsed.success) throw new Error(`Análisis inválido: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
 
   return { analysis: parsed.data, model, usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, costUsd: estimateCost(usage.inputTokens, usage.outputTokens) } }

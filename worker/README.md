@@ -31,6 +31,12 @@ Solo **Instagram** por defecto: el mismo video se sube a las 3 redes y analizarl
 `ANALYSIS_PLATFORMS` en Vercel (p. ej. `instagram,youtube`). Los jobs en cola de plataformas excluidas se sacan de
 la cola en el cron diario (si después habilitás la plataforma, se vuelven a encolar). TikTok nunca se encola solo (requiere subir el archivo).
 
+## Reels que Instagram no entrega
+
+Meta no devuelve `media_url` en reels con música con copyright (también la propia distribuida). En ese caso el worker
+baja la copia del mismo video en TikTok o YouTube (misma cuenta, publicada ±30 min) con `yt-dlp`, y el análisis se guarda
+en el reel de Instagram.
+
 ## Orden de la cola
 
 Primero lo publicado en los últimos 30 días (más nuevo primero), después el backlog por views
