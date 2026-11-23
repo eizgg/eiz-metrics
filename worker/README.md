@@ -25,6 +25,12 @@ Variables opcionales: `ANTHROPIC_MODEL`, `ANALYSIS_MAX_JOBS`, `ANALYSIS_PRICE_IN
 El repo es público: los logs de Actions también. El worker no imprime tokens ni URLs firmadas, solo ids de jobs y conteo de tokens.
 YouTube puede pedir verificación anti-bot a las IPs de GitHub; si los jobs de YouTube fallan por eso, los de Instagram siguen andando.
 
+## Qué se analiza
+
+Solo **Instagram** por defecto: el mismo video se sube a las 3 redes y analizarlo una vez alcanza. Se cambia con
+`ANALYSIS_PLATFORMS` en Vercel (p. ej. `instagram,youtube`). Los jobs en cola de plataformas excluidas se sacan de
+la cola en el cron diario (si después habilitás la plataforma, se vuelven a encolar). TikTok nunca se encola solo (requiere subir el archivo).
+
 ## Orden de la cola
 
 Primero lo publicado en los últimos 30 días (más nuevo primero), después el backlog por views

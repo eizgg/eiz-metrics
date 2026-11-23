@@ -34,3 +34,6 @@ dist-ssr
 .vercel
 .env*.local
 !.env.example
+
+# Python
+__pycache__/
