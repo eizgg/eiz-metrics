@@ -1,14 +1,16 @@
 /**
- * Worker de análisis de video (Fase E). Corre fuera de Vercel (Docker en Fly.io/Railway).
+ * Worker de análisis de video (Fase E). Corre fuera de Vercel: GitHub Actions (.github/workflows/analysis-worker.yml) o Docker.
  * Consume analysis_jobs con claim_analysis_job() (atómico, varios workers no se pisan).
  *
- * Uso: npx tsx worker/src/main.ts            # loop infinito
- *      npx tsx worker/src/main.ts --once     # procesa la cola y sale
+ * Uso: npx tsx worker/src/main.ts                    # loop infinito
+ *      npx tsx worker/src/main.ts --once             # procesa la cola y sale
+ *      npx tsx worker/src/main.ts --once --max 15    # procesa como mucho 15 jobs (tope de gasto por corrida)
  */
 import { config } from 'dotenv'
 import { createServiceClient } from '../../lib/ingest/sync.js'
 import { processJob } from './pipeline.js'
 import type { AnalysisJob } from './pipeline.js'
+import { parseMaxJobs } from './args.js'
 
 config()
 
@@ -24,16 +26,24 @@ async function claim(supabase: ReturnType<typeof createServiceClient>): Promise<
 
 async function main() {
   const once = process.argv.includes('--once')
+  const maxJobs = parseMaxJobs(process.argv)
   const supabase = createServiceClient()
-  console.log(`🎬 Worker de análisis iniciado (${once ? 'una pasada' : 'loop'})`)
+  const tope = Number.isFinite(maxJobs) ? `, tope ${maxJobs} jobs` : ''
+  console.log(`🎬 Worker de análisis iniciado (${once ? 'una pasada' : 'loop'}${tope})`)
 
+  let processed = 0
   for (;;) {
+    if (processed >= maxJobs) {
+      console.log(`⏹️  Tope de ${maxJobs} jobs alcanzado; el resto queda en cola para la próxima corrida`)
+      break
+    }
     const job = await claim(supabase)
     if (!job) {
       if (once) break
       await new Promise((r) => setTimeout(r, IDLE_MS))
       continue
     }
+    processed++
     console.log(`▶️  Job ${job.id} (video ${job.video_id})`)
     try {
       const out = await processJob(supabase, job)

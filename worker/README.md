@@ -13,13 +13,30 @@ descarga → ffprobe (duración) → keyframes (1/s los primeros 5s, luego cada 
 - Registra tokens (y costo si definís `ANALYSIS_PRICE_IN_PER_MTOK` / `ANALYSIS_PRICE_OUT_PER_MTOK`) en `analysis_jobs`.
 - Reintenta hasta 3 veces por job.
 
-## Correr
+## Despliegue: GitHub Actions
+
+`.github/workflows/analysis-worker.yml` corre el worker todos los días a las 05:15 UTC (después del cron `daily`,
+que encola) y también a mano desde la pestaña **Actions → Análisis de video → Run workflow**. Procesa como mucho
+`--max` jobs por corrida (default 15, configurable con la variable `ANALYSIS_MAX_JOBS` o al lanzarlo a mano).
+
+Secrets del repo: `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`.
+Variables opcionales: `ANTHROPIC_MODEL`, `ANALYSIS_MAX_JOBS`, `ANALYSIS_PRICE_IN_PER_MTOK`, `ANALYSIS_PRICE_OUT_PER_MTOK`.
+
+El repo es público: los logs de Actions también. El worker no imprime tokens ni URLs firmadas, solo ids de jobs y conteo de tokens.
+YouTube puede pedir verificación anti-bot a las IPs de GitHub; si los jobs de YouTube fallan por eso, los de Instagram siguen andando.
+
+## Orden de la cola
+
+Primero lo publicado en los últimos 30 días (más nuevo primero), después el backlog por views
+(`prioritizeCandidates` en `lib/video-analysis/queue.ts` + `claim_analysis_job()` de la migración 0011).
+
+## Correr a mano
 
 ```bash
 docker build -f worker/Dockerfile -t eiz-analysis-worker .
 docker run --rm --env-file .env eiz-analysis-worker            # loop
 docker run --rm --env-file .env eiz-analysis-worker npx tsx worker/src/main.ts --once
+docker run --rm --env-file .env eiz-analysis-worker npx tsx worker/src/main.ts --once --max 5   # con tope
 ```
 
-El cron `/api/cron/analyze` encola los 10 videos más vistos sin analizar. Despliegue sugerido: Fly.io con una
-máquina que se apague sola cuando la cola está vacía (`--once` + scheduler).
+El cron `daily` encola hasta 10 videos sin analizar por día (recientes primero).

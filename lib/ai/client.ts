@@ -29,7 +29,9 @@ export function resolveApiKey(options: AiOptions = {}): string | null {
 }
 
 export function resolveModel(options: AiOptions = {}): string {
-  return options.model ?? process.env.ANTHROPIC_MODEL ?? DEFAULT_MODEL
+  // Una variable vacía (p. ej. una var de GitHub Actions sin definir) cuenta como no configurada
+  const fromEnv = process.env.ANTHROPIC_MODEL?.trim()
+  return options.model ?? (fromEnv || DEFAULT_MODEL)
 }
 
 export function hasApiKey(options: AiOptions = {}): boolean {

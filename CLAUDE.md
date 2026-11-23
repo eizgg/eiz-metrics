@@ -74,6 +74,7 @@ create table public.follower_counts (
 | 0008 | Fase G: `account_profiles` (sembrado con el perfil de EIZ), `content_ideas`, `content_scripts`, `content_calendar` |
 | 0009 | `claim_analysis_job()` recupera jobs `running` abandonados (>30 min): reencola o falla tras 3 intentos |
 | 0010 | Perfil del creador configurable (`niche`, `region`, `language`, `goals`, `current_focus` con vencimiento, `content_formats`, `inspirations`); `ai_analyses` (caché de todo lo que genera la IA, con hash de entradas y TTL); `creator_suggestions` (creadores del nicho sugeridos). Quita `ZN` del perfil de EIZ |
+| 0011 | `claim_analysis_job()` toma primero los videos publicados más recientemente (antes FIFO: el backlog de virales viejos tapaba lo nuevo) |
 
 Reglas: todo INSERT de ingesta y análisis va con `service_role`; el front solo lee (y edita `video_content`, `insights`, ideas, competidores propios, su `account_profiles` y el estado de `creator_suggestions`). El código funciona también **antes** de aplicar las migraciones (modo legado: env vars, sin filtro por cuenta, tablas faltantes se ignoran).
 
@@ -139,7 +140,7 @@ api/                         # 6 funciones de Vercel (el plan Hobby limita a 12)
 ├── tiktok/[action].ts       # upload (userscript) | token | manual
 └── actions/[action].ts      # sync-now | niche | reference | strategy | script | feedback | profile | tips | suggest-creators
 
-worker/                      # análisis de video (Docker: ffmpeg, yt-dlp, faster-whisper, tesseract) — fuera de Vercel
+worker/                      # análisis de video (ffmpeg, yt-dlp, faster-whisper, tesseract) — fuera de Vercel: GitHub Actions o Docker
 scripts/                     # sync.ts (manual), competitors.ts (add | refresh | outliers), discover-competitors.ts, seed-eiz-account.ts,
                              #   tiktok-userscript.user.js
 supabase/migrations/         # SQL versionado
@@ -231,7 +232,7 @@ vercel.json                  # 2 crons (sync 03:00, daily 04:30 UTC) + rewrites 
 - [x] Fase B: schema de contenido
 - [x] Fase C: extras de IG (demografía, horas online, diarias, comentarios) y YouTube Analytics (retención, curva, tráfico, demografía) — **[VERIFICAR] con llamadas reales**
 - [x] Fase D: scoring, patrones (lift), diagnósticos, alertas, reporte semanal
-- [x] Fase E: pipeline de análisis de video (worker Docker) — falta desplegar el worker
+- [x] Fase E: pipeline de análisis de video — el worker corre en GitHub Actions (`analysis-worker.yml`); falta cargar secrets y aplicar 0011
 - [x] Fase F: competencia y nicho
 - [x] Fase G: estrategia (ideas con evidencia, guiones, calendario, feedback, loop de aprendizaje)
 - [x] Fase H: perfil del creador configurable (pantalla "Perfil"), diagnóstico del creador, consejos de contenido (patrones propios + tendencias de la competencia + benchmark), creadores sugeridos del nicho, caché de análisis de IA (`ai_analyses`)
