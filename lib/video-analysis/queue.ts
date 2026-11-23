@@ -48,7 +48,8 @@ export function prioritizeCandidates(
 }
 
 // Encola los videos que todavía no fueron analizados ni tienen job pendiente (recientes primero).
-// Los jobs en cola de plataformas excluidas se cancelan (quedan como 'failed' con el motivo).
+// Los jobs en cola de plataformas excluidas se borran (nunca corrieron): si después se habilita esa
+// plataforma, los videos se vuelven a encolar. Marcarlos 'failed' los dejaba afuera para siempre.
 export async function enqueueUnanalyzed(
   supabase: SupabaseClient,
   accountId: string,
@@ -68,11 +69,7 @@ export async function enqueueUnanalyzed(
 
   const excludedIds = videos.filter((v) => !platforms.has(v.platform)).map((v) => v.id)
   if (excludedIds.length > 0) {
-    await supabase
-      .from('analysis_jobs')
-      .update({ status: 'failed', error: 'Plataforma excluida del análisis (ANALYSIS_PLATFORMS)', finished_at: now.toISOString() })
-      .eq('status', 'queued')
-      .in('video_id', excludedIds)
+    await supabase.from('analysis_jobs').delete().eq('status', 'queued').in('video_id', excludedIds)
   }
 
   const [{ data: analyzed }, { data: jobs }, { data: latest }] = await Promise.all([

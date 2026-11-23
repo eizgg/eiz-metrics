@@ -28,8 +28,8 @@ YouTube puede pedir verificación anti-bot a las IPs de GitHub; si los jobs de Y
 ## Qué se analiza
 
 Solo **Instagram** por defecto: el mismo video se sube a las 3 redes y analizarlo una vez alcanza. Se cambia con
-`ANALYSIS_PLATFORMS` en Vercel (p. ej. `instagram,youtube`). Los jobs en cola de plataformas excluidas se cancelan
-en el cron diario. TikTok nunca se encola solo (requiere subir el archivo).
+`ANALYSIS_PLATFORMS` en Vercel (p. ej. `instagram,youtube`). Los jobs en cola de plataformas excluidas se sacan de
+la cola en el cron diario (si después habilitás la plataforma, se vuelven a encolar). TikTok nunca se encola solo (requiere subir el archivo).
 
 ## Orden de la cola
 

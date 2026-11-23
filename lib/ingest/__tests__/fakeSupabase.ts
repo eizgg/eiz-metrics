@@ -24,7 +24,7 @@ export class FakeDb {
 
 class Query implements PromiseLike<Result> {
   private filters: Array<(r: Row) => boolean> = []
-  private op: 'select' | 'insert' | 'upsert' | 'update' = 'select'
+  private op: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select'
   private payload: Row[] = []
   private patch: Row = {}
   private onConflict: string[] = []
@@ -38,6 +38,7 @@ class Query implements PromiseLike<Result> {
   insert(rows: Row | Row[]) { this.op = 'insert'; this.payload = Array.isArray(rows) ? rows : [rows]; return this }
   upsert(rows: Row | Row[], opts?: { onConflict?: string }) { this.op = 'upsert'; this.payload = Array.isArray(rows) ? rows : [rows]; this.onConflict = (opts?.onConflict ?? 'id').split(','); return this }
   update(patch: Row) { this.op = 'update'; this.patch = patch; return this }
+  delete() { this.op = 'delete'; return this }
   eq(col: string, v: unknown) { this.filters.push((r) => r[col] === v); return this }
   is(col: string, v: unknown) { this.filters.push((r) => (r[col] ?? null) === v); return this }
   in(col: string, vals: unknown[]) { this.filters.push((r) => vals.includes(r[col])); return this }
@@ -67,6 +68,12 @@ class Query implements PromiseLike<Result> {
     }
     let matched = rows.filter((r) => this.filters.every((f) => f(r)))
     if (this.op === 'update') { matched.forEach((r) => Object.assign(r, this.patch)); return { data: null, error: null } }
+    if (this.op === 'delete') {
+      const keep = rows.filter((r) => !matched.includes(r))
+      rows.splice(0, rows.length, ...keep)
+      this.db.log.push(`delete ${this.table} x${matched.length}`)
+      return { data: null, error: null }
+    }
     for (const o of [...this.ordering].reverse()) {
       matched = [...matched].sort((a, b) => {
         const x = a[o.col] as string | number, y = b[o.col] as string | number

@@ -39,7 +39,7 @@ describe('analysisPlatforms', () => {
 })
 
 describe('enqueueUnanalyzed', () => {
-  it('encola solo Instagram (recientes primero) y cancela los jobs en cola de otras plataformas', async () => {
+  it('encola solo Instagram (recientes primero) y saca de la cola los jobs de otras plataformas', async () => {
     const db = new FakeDb()
     db.rows('platform_accounts').push({ id: 'pa-ig', account_id: 'acc' }, { id: 'pa-yt', account_id: 'acc' }, { id: 'pa-tt', account_id: 'acc' })
     db.rows('videos').push(
@@ -55,7 +55,20 @@ describe('enqueueUnanalyzed', () => {
 
     const jobs = db.rows('analysis_jobs')
     expect(out.queued).toBe(2)
-    expect(jobs.filter((j) => j.status !== 'failed').map((j) => j.video_id)).toEqual(['ig-nuevo', 'ig-viejo'])
-    expect(jobs.find((j) => j.id === 'j-yt-viejo')?.status).toBe('failed')
+    expect(jobs.map((j) => j.video_id)).toEqual(['ig-nuevo', 'ig-viejo'])
+  })
+
+  it('si después se habilita la plataforma, sus videos se vuelven a encolar', async () => {
+    const db = new FakeDb()
+    db.rows('platform_accounts').push({ id: 'pa-yt', account_id: 'acc' })
+    db.rows('videos').push({ id: 'yt-nuevo', url: 'u3', platform: 'youtube', published_at: '2026-11-19T20:00:00Z', platform_account_id: 'pa-yt' })
+    db.rows('analysis_jobs').push({ id: 'j-yt', video_id: 'yt-nuevo', status: 'queued' })
+
+    await enqueueUnanalyzed(db.client(), 'acc', 10, NOW, new Set(['instagram']))
+    expect(db.rows('analysis_jobs')).toHaveLength(0)
+
+    const out = await enqueueUnanalyzed(db.client(), 'acc', 10, NOW, new Set(['instagram', 'youtube']))
+    expect(out.queued).toBe(1)
+    expect(db.rows('analysis_jobs').map((j) => j.video_id)).toEqual(['yt-nuevo'])
   })
 })
