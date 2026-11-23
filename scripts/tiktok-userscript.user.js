@@ -125,7 +125,11 @@
     function recortarInsight(d) {
         const info = d && d.video_info;
         if (!info || !info.aweme_id) return null;
-        if (!d.video_per_duration_realtime && !d.video_retention_rate_realtime) return null;
+        // Basta con cualquier dato de analítica: el servidor mapea cada bloque por separado.
+        // Las respuestas con solo video_info (stats básicas) se ignoran: eso ya lo trae la lista de videos.
+        const bloques = ['video_per_duration_realtime', 'video_retention_rate_realtime', 'video_finish_rate_realtime',
+            'video_new_followers', 'video_traffic_source_percent_realtime'];
+        if (!bloques.some(function (k) { return d[k]; })) return null;
         return {
             video_info: {
                 aweme_id: String(info.aweme_id),
