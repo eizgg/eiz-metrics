@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { persistFetchResult, upsertFollowers, upsertVideos } from '../persist.js'
+import { carryForwardRetention, persistFetchResult, upsertFollowers, upsertVideos } from '../persist.js'
 import { syncPlatformAccount } from '../sync.js'
 import { emptyMetric } from '../types.js'
 import type { FetchResult, NormalizedVideo, PlatformAccountRef } from '../types.js'
@@ -40,6 +40,29 @@ describe('persist con Supabase falso', () => {
     expect(db.rows('videos')).toHaveLength(1)
     expect(db.rows('video_metrics').map((m) => m.views)).toEqual([100, 250])
     expect(new Set(db.rows('video_metrics').map((m) => m.video_id)).size).toBe(1)
+  })
+
+  it('una lectura sin retención (lista de TikTok) no tapa la retención que llegó antes', async () => {
+    const db = new FakeDb()
+    const conAnalitica = { ...emptyMetric('a'), views: 500, avgWatchTimeSeconds: 11.43, watchedFullPct: 3.93, newFollowers: 1, trafficSources: { for_you: 0.9 } }
+    await persistFetchResult(db.client(), accountRef, { ...result(['a']), metrics: [conAnalitica] })
+    db.rows('video_metrics')[0].fetched_at = '2026-11-23T10:00:00Z'
+    await persistFetchResult(db.client(), accountRef, { ...result(['a']), metrics: [{ ...emptyMetric('a'), views: 521 }] })
+    const ultima = db.rows('video_metrics')[1]
+    expect(ultima).toMatchObject({ views: 521, avg_watch_time_seconds: 11.43, watched_full_pct: 3.93, new_followers: 1, traffic_sources: { for_you: 0.9 } })
+  })
+
+  it('carryForwardRetention usa la fila más reciente y nunca pisa valores propios', () => {
+    const rows: Array<Record<string, unknown>> = [
+      { video_id: 'v', avg_watch_time_seconds: null, retention_pct: null, new_followers: 7 },
+      { video_id: 'otro', avg_watch_time_seconds: null, retention_pct: null },
+    ]
+    carryForwardRetention(rows, [
+      { video_id: 'v', fetched_at: '2026-11-20T00:00:00Z', avg_watch_time_seconds: 10, new_followers: 1 },
+      { video_id: 'v', fetched_at: '2026-11-23T00:00:00Z', avg_watch_time_seconds: 12, new_followers: 2 },
+    ])
+    expect(rows[0]).toMatchObject({ avg_watch_time_seconds: 12, new_followers: 7 })
+    expect(rows[1].avg_watch_time_seconds).toBeNull()
   })
 
   it('seguidores: un solo registro por día (upsert)', async () => {
