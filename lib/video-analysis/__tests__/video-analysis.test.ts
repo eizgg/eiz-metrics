@@ -152,6 +152,19 @@ describe('analyzeVideo', () => {
     expect(retryMessages[2].content[0]).toMatchObject({ type: 'tool_result', is_error: true })
   })
 
+  it('el reintento responde a TODAS las llamadas a la herramienta de la primera respuesta', async () => {
+    const fn = mockAnthropicSequence([
+      { content: [
+        { type: 'tool_use', name: 'report_video_analysis', input: { hook: 'suelto' }, id: 'toolu_a' },
+        { type: 'tool_use', name: 'report_video_analysis', input: { structure: [] }, id: 'toolu_b' },
+      ] },
+      { content: [{ type: 'tool_use', name: 'report_video_analysis', input: valid }] },
+    ])
+    await analyzeVideo([{ timeSeconds: 0, jpegBase64: 'A' }], ctx, { apiKey: 'k', model: 'm' })
+    const retryMessages = lastRequestBody(fn).messages as Array<{ content: Array<{ type: string; tool_use_id?: string }> }>
+    expect(retryMessages[2].content.map((c) => c.tool_use_id)).toEqual(['toolu_a', 'toolu_b'])
+  })
+
   it('falla si el modelo devuelve algo fuera del schema', async () => {
     mockAnthropicTool('report_video_analysis', { ...valid, format: 'inventado' })
     await expect(analyzeVideo([], ctx, { apiKey: 'k' })).rejects.toThrow(/Análisis inválido/)

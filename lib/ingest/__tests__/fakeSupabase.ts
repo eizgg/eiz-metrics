@@ -42,6 +42,13 @@ class Query implements PromiseLike<Result> {
   eq(col: string, v: unknown) { this.filters.push((r) => r[col] === v); return this }
   is(col: string, v: unknown) { this.filters.push((r) => (r[col] ?? null) === v); return this }
   in(col: string, vals: unknown[]) { this.filters.push((r) => vals.includes(r[col])); return this }
+  // Solo el patrón "col.not.is.null,col2.not.is.null" (alguno de los campos con valor)
+  or(expr: string) {
+    const cols = expr.split(',').map((c) => c.split('.')[0])
+    this.filters.push((r) => cols.some((c) => (r[c] ?? null) !== null))
+    return this
+  }
+  not(col: string, op: string, v: unknown) { if (op === 'is') this.filters.push((r) => (r[col] ?? null) !== v); return this }
   gte(col: string, v: string | number) { this.filters.push((r) => (r[col] as string | number) >= v); return this }
   maybeSingle() { this.single = true; return this }
   order(col: string, opts?: { ascending?: boolean }) { this.ordering.push({ col, asc: opts?.ascending !== false }); return this }

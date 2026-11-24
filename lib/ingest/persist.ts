@@ -121,6 +121,41 @@ export async function upsertVideos(
   return { ids, inserted, errors }
 }
 
+// Métricas de retención que no todas las fuentes traen en cada lectura
+const CARRY_FIELDS = ['retention_pct', 'avg_watch_time_seconds', 'watched_full_pct', 'new_followers', 'traffic_sources'] as const
+
+/**
+ * El dashboard lee la última fila de cada video. La lista de videos de TikTok trae views/likes pero no retención,
+ * y si llegaba después de la analítica la tapaba. A las filas sin tiempo promedio ni retención se les copian los
+ * valores de la última fila del mismo video que sí los tenía (los valores propios nunca se pisan).
+ */
+export function carryForwardRetention(rows: Array<Record<string, unknown>>, previous: Array<Record<string, unknown>>): void {
+  // Último valor no nulo de CADA campo por video: una fila reciente que omite un campo no borra el de una anterior
+  const latest = new Map<string, Map<string, { at: string; value: unknown }>>()
+  for (const p of previous) {
+    const id = String(p.video_id)
+    const fields = latest.get(id) ?? new Map<string, { at: string; value: unknown }>()
+    latest.set(id, fields)
+    for (const f of CARRY_FIELDS) {
+      if ((p[f] ?? null) === null) continue
+      const cur = fields.get(f)
+      if (!cur || String(p.fetched_at) > cur.at) fields.set(f, { at: String(p.fetched_at), value: p[f] })
+    }
+  }
+  for (const row of rows) {
+    const fields = latest.get(String(row.video_id))
+    if (!fields) continue
+    for (const f of CARRY_FIELDS) {
+      const prev = fields.get(f)
+      if ((row[f] ?? null) === null && prev) row[f] = prev.value
+    }
+  }
+}
+
+function lacksRetention(row: Record<string, unknown>): boolean {
+  return (row.avg_watch_time_seconds ?? null) === null && (row.retention_pct ?? null) === null
+}
+
 export async function insertMetrics(
   supabase: SupabaseClient,
   ids: Map<string, string>,
@@ -130,6 +165,19 @@ export async function insertMetrics(
     .filter((m) => ids.has(m.externalId))
     .map((m) => buildMetricRow(ids.get(m.externalId)!, m))
   if (rows.length === 0) return { inserted: 0, errors: [] }
+
+  const missing = [...new Set(rows.filter(lacksRetention).map((r) => String(r.video_id)))]
+  if (missing.length > 0) {
+    const { data: previous, error: prevErr } = await supabase
+      .from('video_metrics')
+      .select('video_id, fetched_at, retention_pct, avg_watch_time_seconds, watched_full_pct, new_followers, traffic_sources')
+      .in('video_id', missing)
+      .or(CARRY_FIELDS.map((f) => `${f}.not.is.null`).join(','))
+      .order('fetched_at', { ascending: false })
+      .limit(1000)
+    // Sin columnas extendidas (modo legado) o con error de lectura: se inserta igual, sin copiar
+    if (!prevErr) carryForwardRetention(rows, (previous ?? []) as Array<Record<string, unknown>>)
+  }
 
   const { error } = await supabase.from('video_metrics').insert(rows)
   if (error) return { inserted: 0, errors: [`Insertando métricas: ${error.message}`] }
