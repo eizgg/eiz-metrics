@@ -65,6 +65,23 @@ describe('persist con Supabase falso', () => {
     expect(rows[1].avg_watch_time_seconds).toBeNull()
   })
 
+  it('carryForwardRetention toma el último valor de cada campo por separado', () => {
+    const rows: Array<Record<string, unknown>> = [{ video_id: 'v' }]
+    carryForwardRetention(rows, [
+      { video_id: 'v', fetched_at: '2026-11-20T00:00:00Z', avg_watch_time_seconds: 10, traffic_sources: { for_you: 0.9 } },
+      { video_id: 'v', fetched_at: '2026-11-23T00:00:00Z', avg_watch_time_seconds: 12, traffic_sources: null },
+    ])
+    expect(rows[0]).toMatchObject({ avg_watch_time_seconds: 12, traffic_sources: { for_you: 0.9 } })
+  })
+
+  it('considera filas previas que solo tienen retention_pct', async () => {
+    const db = new FakeDb()
+    await persistFetchResult(db.client(), accountRef, { ...result(['a']), metrics: [{ ...emptyMetric('a'), views: 10, retentionPct: 41.5 }] })
+    db.rows('video_metrics')[0].fetched_at = '2026-11-23T10:00:00Z'
+    await persistFetchResult(db.client(), accountRef, { ...result(['a']), metrics: [{ ...emptyMetric('a'), views: 20 }] })
+    expect(db.rows('video_metrics')[1]).toMatchObject({ views: 20, retention_pct: 41.5 })
+  })
+
   it('seguidores: un solo registro por día (upsert)', async () => {
     const db = new FakeDb()
     await upsertFollowers(db.client(), accountRef, 100)

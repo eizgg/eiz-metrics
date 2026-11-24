@@ -130,17 +130,24 @@ const CARRY_FIELDS = ['retention_pct', 'avg_watch_time_seconds', 'watched_full_p
  * valores de la última fila del mismo video que sí los tenía (los valores propios nunca se pisan).
  */
 export function carryForwardRetention(rows: Array<Record<string, unknown>>, previous: Array<Record<string, unknown>>): void {
-  const latest = new Map<string, Record<string, unknown>>()
+  // Último valor no nulo de CADA campo por video: una fila reciente que omite un campo no borra el de una anterior
+  const latest = new Map<string, Map<string, { at: string; value: unknown }>>()
   for (const p of previous) {
     const id = String(p.video_id)
-    const cur = latest.get(id)
-    if (!cur || String(p.fetched_at) > String(cur.fetched_at)) latest.set(id, p)
+    const fields = latest.get(id) ?? new Map<string, { at: string; value: unknown }>()
+    latest.set(id, fields)
+    for (const f of CARRY_FIELDS) {
+      if ((p[f] ?? null) === null) continue
+      const cur = fields.get(f)
+      if (!cur || String(p.fetched_at) > cur.at) fields.set(f, { at: String(p.fetched_at), value: p[f] })
+    }
   }
   for (const row of rows) {
-    const prev = latest.get(String(row.video_id))
-    if (!prev) continue
+    const fields = latest.get(String(row.video_id))
+    if (!fields) continue
     for (const f of CARRY_FIELDS) {
-      if ((row[f] ?? null) === null && (prev[f] ?? null) !== null) row[f] = prev[f]
+      const prev = fields.get(f)
+      if ((row[f] ?? null) === null && prev) row[f] = prev.value
     }
   }
 }
@@ -165,7 +172,7 @@ export async function insertMetrics(
       .from('video_metrics')
       .select('video_id, fetched_at, retention_pct, avg_watch_time_seconds, watched_full_pct, new_followers, traffic_sources')
       .in('video_id', missing)
-      .not('avg_watch_time_seconds', 'is', null)
+      .or(CARRY_FIELDS.map((f) => `${f}.not.is.null`).join(','))
       .order('fetched_at', { ascending: false })
       .limit(1000)
     // Sin columnas extendidas (modo legado) o con error de lectura: se inserta igual, sin copiar

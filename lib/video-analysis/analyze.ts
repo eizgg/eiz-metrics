@@ -62,15 +62,15 @@ export function buildRequestBody(model: string, frames: FrameImage[], ctx: Analy
   }
 }
 
-type ParseOutcome = { ok: true; analysis: VideoAnalysis } | { ok: false; error: string; toolUseId: string | null }
+type ParseOutcome = { ok: true; analysis: VideoAnalysis } | { ok: false; error: string }
 
 function parseResponse(message: Anthropic.Message): ParseOutcome {
   const toolUse = message.content.find((c): c is Anthropic.ToolUseBlock => c.type === 'tool_use' && c.name === ANALYSIS_TOOL_NAME)
-  if (!toolUse) return { ok: false, error: 'El modelo no devolvió el análisis estructurado', toolUseId: null }
+  if (!toolUse) return { ok: false, error: 'El modelo no devolvió el análisis estructurado' }
   const parsed = videoAnalysisSchema.safeParse(coerceStringifiedFields(toolUse.input))
   if (parsed.success) return { ok: true, analysis: parsed.data }
   const issues = parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
-  return { ok: false, error: `Análisis inválido: ${issues}`, toolUseId: toolUse.id }
+  return { ok: false, error: `Análisis inválido: ${issues}` }
 }
 
 /**
@@ -87,9 +87,12 @@ export async function analyzeVideo(frames: FrameImage[], ctx: AnalysisContext, o
 
   if (!outcome.ok) {
     const fix = `${outcome.error}. Llamá de nuevo a la herramienta "${ANALYSIS_TOOL_NAME}" con el objeto completo: todos los campos requeridos, con su tipo (objetos y arrays reales, no texto).`
-    const correction: Anthropic.ContentBlockParam[] = outcome.toolUseId
-      ? [{ type: 'tool_result', tool_use_id: outcome.toolUseId, is_error: true, content: fix }]
-      : [{ type: 'text', text: fix }]
+    // La API exige un tool_result por CADA tool_use de la respuesta anterior (a veces llama la herramienta más de una vez)
+    const toolUses = first.message.content.filter((c): c is Anthropic.ToolUseBlock => c.type === 'tool_use')
+    const correction: Anthropic.ContentBlockParam[] =
+      toolUses.length > 0
+        ? toolUses.map((t) => ({ type: 'tool_result' as const, tool_use_id: t.id, is_error: true, content: fix }))
+        : [{ type: 'text', text: fix }]
     const retry = await postMessages(
       { ...body, messages: [...body.messages, { role: 'assistant', content: first.message.content }, { role: 'user', content: correction }] },
       options,
