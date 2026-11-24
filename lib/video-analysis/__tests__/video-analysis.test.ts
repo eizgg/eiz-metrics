@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mockAnthropicText, mockAnthropicTool } from '../../ai/__tests__/mockAnthropic.js'
+import { lastRequestBody, mockAnthropicSequence, mockAnthropicText, mockAnthropicTool } from '../../ai/__tests__/mockAnthropic.js'
 import { analyzeVideo, buildRequestBody, estimateCost } from '../analyze.js'
 import { cutsPerMinute, keyframeTimes, onScreenTextRatio, parseFfprobeDuration, parseSceneTimes } from '../ffmpeg.js'
 import { ANALYST_SYSTEM_PROMPT, buildContextText } from '../prompts.js'
@@ -136,6 +136,20 @@ describe('analyzeVideo', () => {
   it('coerceStringifiedFields deja igual lo que no es JSON', () => {
     expect(coerceStringifiedFields({ topic: 'barrio', hook: '{roto' })).toEqual({ topic: 'barrio', hook: '{roto' })
     expect(coerceStringifiedFields('texto')).toBe('texto')
+  })
+
+  it('si la respuesta no cumple el schema, reintenta una vez con los errores y suma el uso', async () => {
+    const fn = mockAnthropicSequence([
+      { content: [{ type: 'tool_use', name: 'report_video_analysis', input: { ...valid, hook: 'texto suelto', structure: undefined } }], opts: { usage: { input_tokens: 1000, output_tokens: 300 } } },
+      { content: [{ type: 'tool_use', name: 'report_video_analysis', input: valid }], opts: { usage: { input_tokens: 1100, output_tokens: 400 } } },
+    ])
+    const r = await analyzeVideo([{ timeSeconds: 0, jpegBase64: 'A' }], ctx, { apiKey: 'k', model: 'm' })
+    expect(r.analysis.hook).toEqual(valid.hook)
+    expect(r.usage).toMatchObject({ inputTokens: 2100, outputTokens: 700 })
+    expect(fn).toHaveBeenCalledTimes(2)
+    const retryMessages = lastRequestBody(fn).messages as Array<{ role: string; content: Array<{ type: string; is_error?: boolean }> }>
+    expect(retryMessages).toHaveLength(3)
+    expect(retryMessages[2].content[0]).toMatchObject({ type: 'tool_result', is_error: true })
   })
 
   it('falla si el modelo devuelve algo fuera del schema', async () => {
